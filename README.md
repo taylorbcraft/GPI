@@ -1,9 +1,14 @@
 # GPI Workflow
 
-This project calibrates a GPI classifier and applies
-that saved model to field-level Sentinel-2 summaries. The local R workflow starts
-after the predictor rasters have been exported; the Earth Engine script is kept as
-the record for rebuilding those rasters when needed.
+This project builds a reproducible workflow for mapping grassland production intensity (GPI) 
+from Sentinel-2 imagery and field-calibrated environmental measures. The model is calibrated 
+with 2025 field surveys, where sampled zones were assigned observer-based management classes and 
+measured for soil resistance, soil moisture, vegetation height, and plant richness. These field 
+measurements are used to derive a three-class training dataset using KNN. A random forest 
+classifier is then trained to predict those classes from Sentinel-2 products as predictors.
+
+Once calibrated, the saved model can be applied to other years without collecting new field data, 
+provided that matching Sentinel-2 predictor rasters are available for the target year.
 
 ## Quick Start
 
