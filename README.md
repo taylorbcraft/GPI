@@ -1,6 +1,6 @@
 # GPI Workflow
 
-This project calibrates a GPI classifier from the 2025 field campaign and applies
+This project calibrates a GPI classifier and applies
 that saved model to field-level Sentinel-2 summaries. The local R workflow starts
 after the predictor rasters have been exported; the Earth Engine script is kept as
 the record for rebuilding those rasters when needed.
