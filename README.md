@@ -143,8 +143,7 @@ Prediction and map outputs:
 - canonical input and output paths
 
 Update `prediction_year` and `prediction_image_date` for annual mapping. Update
-`predictor_bands` only when the raster stack changes. Update `field_id_col` only
-when the full field geometry uses a different source id column.
+`predictor_bands` only when the raster stack changes.
 
 ## Required R Packages
 
