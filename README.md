@@ -9,20 +9,13 @@ the record for rebuilding those rasters when needed.
 
 1. Check `config.R` for the calibration year, prediction year, image dates,
    field id column, class order, and expected predictor bands.
-2. Confirm the required inputs are present:
-   - `data/raw/environmental_field_data_<calibration_year>.csv`
-   - `data/raw/plant_diversity_plots_<calibration_year>.csv`
-   - `data/spatial/sampled_zone_geometry.gpkg`
-   - `data/spatial/field_geometry.gpkg`
-   - calibration rasters named `<band>_<calibration_image_date>_mosaic.tif`
-   - prediction rasters named `<band>_<prediction_image_date>_mosaic.tif`
-3. To rebuild the calibration model and make the configured prediction map, run:
+2. To rebuild the calibration model and make the configured prediction map, run:
 
 ```r
 source("scripts/run_calibration_and_prediction.R")
 ```
 
-4. To apply the existing calibration model to a new prediction year, update
+3. To apply the existing calibration model to a new prediction year, update
    `prediction_year` and `prediction_image_date`, add those rasters, then run:
 
 ```r
@@ -39,10 +32,7 @@ The project uses two spatial units:
 - `zone`: sampled training polygons identified by `polygon_id`
 - `field`: the full mapping layer that receives final predictions
 
-Sampled zones carry field measurements and observer labels. The observer labels
-are collapsed to three classes: original `extensive` and `mid_low` become
-`extensive`, original `mid_high` becomes `mid`, and original `intensive` remains
-`intensive`. Those labels are converted into a weighted KNN-derived GPI target
+Sampled zones carry field measurements and observer labels. Those labels are converted into a weighted KNN-derived GPI target
 and used to train a random forest. The trained model is then applied to every
 mapped field using the same raster summaries.
 
@@ -81,8 +71,7 @@ GPI_Project/
 `data/raw/environmental_field_data_<calibration_year>.csv`
 
 Contains sampled-zone field measurements such as soil moisture, soil resistance,
-vegetation height, and the observer label. The source column `in_lui` is renamed
-to `observer_estimated_GPI` in script `01`.
+vegetation height, and the observer label.
 
 `data/raw/plant_diversity_plots_<calibration_year>.csv`
 
@@ -91,13 +80,12 @@ Contains plot-level plant richness observations that are summarized to
 
 `data/spatial/sampled_zone_geometry.gpkg`
 
-Defines the sampled training polygons used for raster extraction and joins to
+Contains the sampled training polygons used for raster extraction and joins to
 field observations.
 
 `data/spatial/field_geometry.gpkg`
 
-Defines the full mapping layer. The configured `field_id_col` is standardized to
-`field_id` while the prediction tables are being built.
+Contains the geometry of all fields in the Southwest Friesland study area.
 
 `data/processed/rasters/`
 
@@ -140,10 +128,6 @@ Prediction and map outputs:
 - `data/processed/predictions/field_gpi_predictions_<prediction_year>.csv`
 - `data/processed/spatial/field_gpi_map_<prediction_year>.gpkg`
 - `figures/field_gpi_map_<prediction_year>.png`
-
-Note: `gpi_estimated_rule_thresholds_<calibration_year>.csv` is a compatibility
-filename. In the current workflow it stores KNN settings and class counts, not
-numeric rule thresholds.
 
 ## Configuration
 
