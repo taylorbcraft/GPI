@@ -1,0 +1,2 @@
+target,n_training_rows,selected_mtry,ntree,cv_folds,cv_repeats,tuning_accuracy,tuning_kappa,repeated_cv_predictions,overall_accuracy,kappa
+gpi_class_knn_all_field,83,2,1000,5,20,0.8376617647058824,0.7482131381829885,1660,0.844578313253012,0.7589056518802071

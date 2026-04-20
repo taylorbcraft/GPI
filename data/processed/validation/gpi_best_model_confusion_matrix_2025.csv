@@ -1,0 +1,10 @@
+target,Prediction,Reference,Freq
+gpi_class_knn_all_field,extensive,extensive,631
+gpi_class_knn_all_field,mid,extensive,109
+gpi_class_knn_all_field,intensive,extensive,20
+gpi_class_knn_all_field,extensive,mid,57
+gpi_class_knn_all_field,mid,mid,447
+gpi_class_knn_all_field,intensive,mid,56
+gpi_class_knn_all_field,extensive,intensive,0
+gpi_class_knn_all_field,mid,intensive,16
+gpi_class_knn_all_field,intensive,intensive,324
