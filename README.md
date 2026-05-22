@@ -1,19 +1,20 @@
 # GPI Workflow
 
-This project builds a reproducible workflow for mapping grassland production intensity (GPI) 
-from Sentinel-2 imagery and field-calibrated environmental measures. The model is calibrated 
-with 2025 field surveys, where sampled zones were assigned observer-based management classes and 
-measured for soil resistance, soil moisture, vegetation height, and plant richness. These field 
-measurements are used to derive a three-class training dataset using KNN. A random forest 
-classifier is then trained to predict those classes from Sentinel-2 products as predictors.
+This project builds a reproducible workflow for mapping grassland production intensity (GPI)
+from Sentinel-2 imagery and field-calibrated environmental measures. The model is calibrated
+with 2025 field surveys, where sampled zones were assigned observer-based management classes and
+measured for soil resistance, soil moisture, vegetation height, and plant richness. These field
+measurements are used to derive a three-class training dataset using KNN. A random forest
+classifier is then trained on pixels extracted from the labeled habitat polygons and applied to
+the full raster stack to produce a pixel-level GPI map.
 
-Once calibrated, the saved model can be applied to other years without collecting new field data, 
+Once calibrated, the saved model can be applied to other years without collecting new field data,
 provided that matching Sentinel-2 predictor rasters are available for the target year.
 
 ## Quick Start
 
 1. Check `config.R` for the calibration year, prediction year, image dates,
-   field id column, class order, and expected predictor bands.
+   class order, and expected predictor bands.
 2. To rebuild the calibration model and make the configured prediction map, run:
 
 ```r
@@ -27,29 +28,28 @@ source("scripts/run_calibration_and_prediction.R")
 source("scripts/run_prediction_only.R")
 ```
 
-The full runner sources scripts `01` through `06`. The prediction runner sources
-only scripts `05` and `06`, so it does not require new field observations.
-
 ## Workflow Logic
 
 The project uses two spatial units:
 
 - `zone`: sampled training polygons identified by `polygon_id`
-- `field`: the full mapping layer that receives final predictions
+- `field`: the reporting layer used to summarize the final pixel map
 
-Sampled zones carry field measurements and observer labels. Those labels are converted into a weighted KNN-derived GPI target
-and used to train a random forest. The trained model is then applied to every
-mapped field using the same raster summaries.
+Sampled zones carry field measurements and observer labels. Those labels are converted into a
+weighted KNN-derived GPI target. The labeled zones are then used as training masks, so all
+predictor pixels inside each zone inherit the zone label. The trained random forest is applied
+pixel by pixel to the prediction-year raster stack, and the resulting raster is summarized back
+to fields for polygon-based reporting.
 
 | Step | Script | Role | Main outputs |
 | --- | --- | --- | --- |
-| 00 | `scripts/00_export_remote_sensing_from_gee.js` | Documents the Sentinel-2 raster export used by the R workflow. Run only when rasters need to be rebuilt. | `<band>_<date>_mosaic.tif` |
-| 01 | `scripts/01_build_anchor_training_data.R` | Joins sampled-zone geometry, 2025 field observations, plant richness, and calibration raster summaries into the anchor training table. | `anchor_zone_training_data_<calibration_year>.csv` |
-| 02 | `scripts/02_validate_environmental_relationships.R` | Checks whether `s2rep` has interpretable relationships with measured ecological variables. | validation summary CSV and plot |
+| 00 | `scripts/00_export_remote_sensing_from_gee.js` | Documents the raster export used by the R workflow. Run only when rasters need to be rebuilt. | `<band>_<date>_mosaic.tif` |
+| 01 | `scripts/01_build_anchor_training_data.R` | Joins sampled-zone geometry, field observations, plant richness, and calibration raster summaries into the anchor training table. | `anchor_zone_training_data_<calibration_year>.csv` |
+| 02 | `scripts/02_validate_environmental_relationships.R` | Checks whether `s2rep` has interpretable relationships with measured ecological variables. | validation summary CSV and figure |
 | 03 | `scripts/03_define_candidate_gpi_classes.R` | Defines the supervised target with leave-one-out KNN over standardized field variables. | `candidate_gpi_training_data_<calibration_year>.csv`, KNN summary, boxplot |
-| 04 | `scripts/04_train_gpi_classifier.R` | Tunes and fits the random forest classifier, then saves model diagnostics and the selected model. | model RDS and validation tables |
-| 05 | `scripts/05_build_field_prediction_data.R` | Extracts prediction-year model raster summaries for every field polygon. | `field_predictor_data_<prediction_year>.csv` |
-| 06 | `scripts/06_predict_field_gpi_classes.R` | Applies the saved calibration model to field predictors and writes the final table, geopackage, and preview map. | `field_gpi_predictions_<prediction_year>.csv`, `field_gpi_map_<prediction_year>.gpkg`, PNG preview |
+| 04 | `scripts/04_train_gpi_classifier.R` | Extracts labeled pixels from sampled zones, tunes and fits the random forest with grouped cross-validation, and saves diagnostics plus the selected model. | model RDS and validation tables |
+| 05 | `scripts/05_build_prediction_stack.R` | Builds the prediction-year predictor raster stack used directly by the pixel classifier. | `pixel_predictor_stack_<prediction_year>.tif` |
+| 06 | `scripts/06_predict_pixel_map.R` | Applies the saved calibration model pixel by pixel, summarizes the classified raster back to fields, and writes the final map products. | `pixel_gpi_map_<prediction_year>.tif`, `field_gpi_pixel_summary_<prediction_year>.csv`, `field_gpi_map_<prediction_year>.gpkg`, PNG previews |
 
 ## Project Layout
 
@@ -58,13 +58,13 @@ GPI_Project/
 ├── config.R
 ├── README.md
 ├── data/
-│   ├── raw/                 # non-spatial sampled field inputs
+│   ├── raw/                 # sampled field inputs
 │   ├── spatial/             # sampled-zone and full-field geometry
 │   └── processed/
 │       ├── models/          # fitted random forest model
-│       ├── predictions/     # field-level prediction tables
+│       ├── predictions/     # prediction stacks and field summaries
 │       ├── rasters/         # Sentinel-2 predictor stack
-│       ├── spatial/         # final mapped GPI output
+│       ├── spatial/         # pixel maps and field geopackages
 │       ├── training/        # anchor and candidate training tables
 │       └── validation/      # diagnostics and model evaluation tables
 ├── figures/                 # validation and map preview figures
@@ -80,17 +80,15 @@ vegetation height, and the observer label.
 
 `data/raw/plant_diversity_plots_<calibration_year>.csv`
 
-Contains plot-level plant richness observations that are summarized to
-`polygon_id`.
+Contains plot-level plant richness observations that are summarized to `polygon_id`.
 
 `data/spatial/sampled_zone_geometry.gpkg`
 
-Contains the sampled training polygons used for raster extraction and joins to
-field observations.
+Contains the sampled training polygons used for raster extraction and joins to field observations.
 
 `data/spatial/field_geometry.gpkg`
 
-Contains the geometry of all fields in the Southwest Friesland study area.
+Contains the geometry of all fields in the study area.
 
 `data/processed/rasters/`
 
@@ -118,7 +116,7 @@ Training outputs:
 
 Validation outputs:
 
-- environmental validation summary and plot
+- environmental validation summary and figure
 - KNN method summary and class counts
 - random forest tuning, confusion matrix, class accuracy, variable importance,
   model comparison, and selected-model metadata
@@ -129,9 +127,11 @@ Model output:
 
 Prediction and map outputs:
 
-- `data/processed/predictions/field_predictor_data_<prediction_year>.csv`
-- `data/processed/predictions/field_gpi_predictions_<prediction_year>.csv`
+- `data/processed/predictions/pixel_predictor_stack_<prediction_year>.tif`
+- `data/processed/predictions/field_gpi_pixel_summary_<prediction_year>.csv`
+- `data/processed/spatial/pixel_gpi_map_<prediction_year>.tif`
 - `data/processed/spatial/field_gpi_map_<prediction_year>.gpkg`
+- `figures/pixel_gpi_map_<prediction_year>.png`
 - `figures/field_gpi_map_<prediction_year>.png`
 
 ## Configuration
@@ -140,11 +140,10 @@ Prediction and map outputs:
 
 - `calibration_year` and `calibration_image_date`
 - `prediction_year` and `prediction_image_date`
-- geometry id columns
 - expected predictor bands
 - model predictor bands
 - ordered three-class GPI levels
-- KNN settings
+- `knn_k`
 - canonical input and output paths
 
 Update `prediction_year` and `prediction_image_date` for annual mapping. Update

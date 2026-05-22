@@ -9,11 +9,6 @@ calibration_image_date <- "2025-04-11"
 prediction_year <- "2025"
 prediction_image_date <- "2025-04-11"
 
-field_id_col <- "meadow_id"
-zone_id_col <- "polygon_id"
-meadow_id_col <- "meadow_id"
-observer_gpi_col <- "observer_estimated_GPI"
-
 predictor_bands <- c(
   "s2rep",
   "ndvi",
@@ -35,7 +30,6 @@ model_predictor_bands <- c(
 
 # KNN turns field measurements into the supervised training target.
 knn_k <- 7
-knn_vote_method <- "weighted_distance"
 
 # Final mapped classes after collapsing the original four observer labels.
 gpi_class_levels <- c(
@@ -122,12 +116,16 @@ path_best_model <- function() {
   file.path(paths$model_dir, paste0("gpi_best_model_", calibration_year, ".rds"))
 }
 
-path_field_predictor_data <- function() {
-  file.path(paths$prediction_dir, paste0("field_predictor_data_", prediction_year, ".csv"))
+path_prediction_stack <- function() {
+  file.path(paths$prediction_dir, paste0("pixel_predictor_stack_", prediction_year, ".tif"))
 }
 
-path_field_predictions <- function() {
-  file.path(paths$prediction_dir, paste0("field_gpi_predictions_", prediction_year, ".csv"))
+path_pixel_predictions <- function() {
+  file.path(paths$prediction_dir, paste0("field_gpi_pixel_summary_", prediction_year, ".csv"))
+}
+
+path_pixel_map <- function() {
+  file.path(paths$spatial_dir, paste0("pixel_gpi_map_", prediction_year, ".tif"))
 }
 
 path_field_map <- function() {
@@ -138,15 +136,10 @@ path_field_map_preview <- function() {
   file.path(paths$figure_dir, paste0("field_gpi_map_", prediction_year, ".png"))
 }
 
-ensure_dirs <- function(dir_paths) {
-  invisible(lapply(dir_paths, dir.create, recursive = TRUE, showWarnings = FALSE))
+path_pixel_map_preview <- function() {
+  file.path(paths$figure_dir, paste0("pixel_gpi_map_", prediction_year, ".png"))
 }
 
-require_file <- function(path, label = NULL) {
-  if (!file.exists(path)) {
-    if (is.null(label)) {
-      label <- path
-    }
-    stop(paste0("Missing required file: ", label, " (", path, ")"), call. = FALSE)
-  }
+ensure_dirs <- function(dir_paths) {
+  invisible(lapply(dir_paths, dir.create, recursive = TRUE, showWarnings = FALSE))
 }

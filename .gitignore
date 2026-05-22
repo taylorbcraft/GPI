@@ -8,3 +8,4 @@ __MACOSX/
 *.gpkg-shm
 *.gpkg-wal
 data/raw/remote_sensing_downloads/
+.positai

@@ -1,2 +1,2 @@
-target,n_training_rows,selected_mtry,ntree,cv_folds,cv_repeats,tuning_accuracy,tuning_kappa,repeated_cv_predictions,overall_accuracy,kappa
-gpi_class_knn_all_field,83,2,1000,5,20,0.8376617647058824,0.7482131381829885,1660,0.844578313253012,0.7589056518802071
+best_target,compared_targets,predictors,target,training_unit,validation_group,n_training_rows,n_training_polygons,selected_mtry,ntree,cv_folds,cv_repeats,tuning_accuracy,tuning_kappa,repeated_cv_predictions,overall_accuracy,kappa
+gpi_class_knn_all_field,gpi_class_knn_all_field,"s2rep, msi, ndmi, mndwi",gpi_class_knn_all_field,pixel,polygon_id,868,83,1,1000,5,20,0.8450686367977266,0.7527974453147385,17360,0.8462557603686636,0.7577942694262902
