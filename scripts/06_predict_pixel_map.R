@@ -12,6 +12,8 @@ library(exactextractr)
 library(janitor)
 library(ggplot2)
 
+# Convert RF class labels back into integer ids so the predicted raster can be
+# stored compactly and linked back to the ordered class legend.
 rf_predict_index <- function(model, data) {
   predictor_df <- as.data.frame(data)
   complete_rows <- complete.cases(predictor_df)
@@ -25,6 +27,8 @@ rf_predict_index <- function(model, data) {
   out
 }
 
+# Summarize the classified raster to each field using coverage-weighted class
+# totals, which handles edge cells that only partially overlap a polygon.
 summarise_field_classes <- function(values, coverage_fraction) {
   coverage_valid <- !is.na(coverage_fraction)
   total_coverage <- sum(coverage_fraction[coverage_valid])
@@ -40,6 +44,8 @@ summarise_field_classes <- function(values, coverage_fraction) {
     ))
   }
 
+  # Pool pixel coverage by class within the field, then convert those totals
+  # into class fractions and identify the dominant class.
   value_tbl <- tibble(
     class_id = values[valid],
     weight = coverage_fraction[valid]
@@ -99,7 +105,8 @@ levels(pixel_gpi_map) <- data.frame(
   gpi_class = gpi_class_levels
 )
 
-# Summarize pixel map to fields
+# Summarize the pixel map to the reporting polygons used for field-level
+# outputs and downstream ecological interpretation.
 fields <- st_read(paths$field_geometry, quiet = TRUE) %>%
   clean_names() %>%
   rename(field_id = meadow_id) %>%
@@ -127,7 +134,8 @@ st_write(
   quiet = TRUE
 )
 
-# Save pixel preview
+# Create lightweight preview figures so the final products can be checked
+# quickly without loading the full-resolution raster and geopackage.
 preview_raster <- aggregate(pixel_gpi_map, fact = 4, fun = modal, na.rm = TRUE)
 
 png(

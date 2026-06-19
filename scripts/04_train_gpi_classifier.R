@@ -12,6 +12,7 @@ library(terra)
 library(janitor)
 
 rf_ntree <- 1000
+rf_mtry <- 1
 cv_folds <- 5
 cv_repeats <- 20
 
@@ -47,67 +48,8 @@ make_grouped_folds <- function(groups, labels, k, seed) {
   map(fold_groups, ~ which(as.character(groups) %in% .x))
 }
 
-# Test candidate mtry values
-tune_mtry_repeated_cv <- function(data, predictors, mtry_values, seed = 123) {
-  resamples <- map(
-    seq_len(cv_repeats),
-    ~ make_grouped_folds(
-      groups = data$polygon_id,
-      labels = data$gpi_class,
-      k = cv_folds,
-      seed = seed + .x - 1
-    )
-  )
-
-  crossing(
-    mtry = mtry_values,
-    repeat_id = seq_len(cv_repeats),
-    fold_id = seq_len(cv_folds)
-  ) %>%
-    mutate(
-      metrics = pmap(
-        list(mtry, repeat_id, fold_id),
-        function(mtry, repeat_id, fold_id) {
-          test_index <- resamples[[repeat_id]][[fold_id]]
-          train_fold <- data[-test_index, ]
-          test_fold <- data[test_index, ]
-
-          rf_mod <- randomForest(
-            x = train_fold %>% select(all_of(predictors)),
-            y = train_fold$gpi_class,
-            mtry = mtry,
-            ntree = rf_ntree,
-            importance = FALSE
-          )
-
-          pred <- predict(rf_mod, newdata = test_fold %>% select(all_of(predictors)))
-          cm <- confusionMatrix(
-            data = factor(pred, levels = gpi_class_levels),
-            reference = factor(test_fold$gpi_class, levels = gpi_class_levels)
-          )
-
-          tibble(
-            accuracy = unname(cm$overall["Accuracy"]),
-            kappa = unname(cm$overall["Kappa"])
-          )
-        }
-      )
-    ) %>%
-    unnest(metrics) %>%
-    group_by(mtry) %>%
-    summarise(
-      Accuracy = mean(accuracy, na.rm = TRUE),
-      Kappa = mean(kappa, na.rm = TRUE),
-      AccuracySD = sd(accuracy, na.rm = TRUE),
-      KappaSD = sd(kappa, na.rm = TRUE),
-      n_resamples = dplyr::n(),
-      .groups = "drop"
-    ) %>%
-    arrange(desc(Kappa), desc(Accuracy), mtry)
-}
-
-# Rerun grouped CV with selected mtry
-predict_repeated_cv <- function(data, predictors, mtry, seed = 456) {
+# Rerun grouped CV
+predict_repeated_cv <- function(data, predictors, seed = 456) {
   resamples <- map(
     seq_len(cv_repeats),
     ~ make_grouped_folds(
@@ -134,7 +76,7 @@ predict_repeated_cv <- function(data, predictors, mtry, seed = 456) {
           rf_mod <- randomForest(
             x = train_fold %>% select(all_of(predictors)),
             y = train_fold$gpi_class,
-            mtry = mtry,
+            mtry = rf_mtry,
             ntree = rf_ntree,
             importance = FALSE
           )
@@ -201,21 +143,9 @@ fit_target_model <- function(target_var, pixel_labels) {
     ) %>%
     drop_na(gpi_class, all_of(model_predictor_bands))
 
-  tuning_results <- tune_mtry_repeated_cv(
-    data = pixel_training_data,
-    predictors = model_predictor_bands,
-    mtry_values = seq_along(model_predictor_bands),
-    seed = 123
-  )
-
-  selected_mtry <- tuning_results %>%
-    slice(1) %>%
-    pull(mtry)
-
   repeated_cv_predictions <- predict_repeated_cv(
     data = pixel_training_data,
     predictors = model_predictor_bands,
-    mtry = selected_mtry,
     seed = 124
   )
 
@@ -228,7 +158,7 @@ fit_target_model <- function(target_var, pixel_labels) {
   fitted_model <- randomForest(
     x = pixel_training_data %>% select(all_of(model_predictor_bands)),
     y = pixel_training_data$gpi_class,
-    mtry = selected_mtry,
+    mtry = rf_mtry,
     ntree = rf_ntree,
     importance = TRUE
   )
@@ -239,29 +169,14 @@ fit_target_model <- function(target_var, pixel_labels) {
     validation_group = "polygon_id",
     n_training_rows = nrow(pixel_training_data),
     n_training_polygons = n_distinct(pixel_training_data$polygon_id),
-    selected_mtry = selected_mtry,
+    selected_mtry = rf_mtry,
     ntree = rf_ntree,
     cv_folds = cv_folds,
     cv_repeats = cv_repeats,
-    tuning_accuracy = tuning_results %>% slice(1) %>% pull(Accuracy),
-    tuning_kappa = tuning_results %>% slice(1) %>% pull(Kappa),
     repeated_cv_predictions = nrow(repeated_cv_predictions),
     overall_accuracy = repeated_cv_eval$summary$overall_accuracy,
     kappa = repeated_cv_eval$summary$kappa
   )
-
-  tuning_tbl <- tuning_results %>%
-    as_tibble() %>%
-    mutate(
-      target = target_var,
-      training_unit = "pixel",
-      validation_group = "polygon_id",
-      ntree = rf_ntree,
-      cv_folds = cv_folds,
-      cv_repeats = cv_repeats,
-      selected = mtry == selected_mtry,
-      .before = 1
-    )
 
   importance_tbl <- importance(fitted_model, type = 1) %>%
     as.data.frame() %>%
@@ -275,7 +190,6 @@ fit_target_model <- function(target_var, pixel_labels) {
     target = target_var,
     model = fitted_model,
     summary = summary_tbl,
-    tuning = tuning_tbl,
     confusion = repeated_cv_eval$confusion,
     class_accuracy = repeated_cv_eval$class_accuracy,
     importance = importance_tbl
@@ -337,7 +251,6 @@ pixel_labels <- terra::extract(
 # Fit all candidate targets
 target_results <- map(target_vars, ~ fit_target_model(.x, pixel_labels))
 target_summary <- map_dfr(target_results, "summary")
-tuning_tbl <- map_dfr(target_results, "tuning")
 
 best_result <- target_results %>%
   set_names(target_vars) %>%
@@ -362,8 +275,6 @@ write_csv(
     ),
   path_model_comparison()
 )
-
-write_csv(tuning_tbl, path_model_tuning())
 write_csv(best_result$confusion, path_best_model_confusion())
 write_csv(best_result$class_accuracy, path_best_model_class_accuracy())
 write_csv(best_result$importance, path_best_model_variable_importance())

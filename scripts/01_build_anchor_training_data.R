@@ -1,6 +1,5 @@
-# Build the polygon-level training table that anchors the workflow.
-# This script joins field measurements, plant richness data, and
-# calibration raster summaries for each sampled habitat polygon.
+# Build the polygon-level training table.
+# This script joins field measurements and raster summaries for each sampled habitat polygon.
 
 source("config.R")
 

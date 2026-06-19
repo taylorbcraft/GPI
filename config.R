@@ -26,9 +26,6 @@ model_predictor_bands <- c(
   "msi"
 )
 
-# KNN turns field measurements into the supervised training target.
-knn_k <- 7
-
 # Final mapped classes after collapsing the original four observer labels.
 gpi_class_levels <- c(
   "extensive",
@@ -94,10 +91,6 @@ path_estimated_thresholds <- function() {
 
 path_model_comparison <- function() {
   file.path(paths$validation_dir, paste0("gpi_model_comparison_", calibration_year, ".csv"))
-}
-
-path_model_tuning <- function() {
-  file.path(paths$validation_dir, paste0("gpi_model_tuning_", calibration_year, ".csv"))
 }
 
 path_best_model_confusion <- function() {

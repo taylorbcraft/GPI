@@ -1,2 +1,2 @@
-best_target,compared_targets,predictors,target,training_unit,validation_group,n_training_rows,n_training_polygons,selected_mtry,ntree,cv_folds,cv_repeats,tuning_accuracy,tuning_kappa,repeated_cv_predictions,overall_accuracy,kappa
-gpi_class_knn_all_field,"gpi_class_knn_all_field, gpi_class_rbc_soil_richness","s2rep, msi",gpi_class_knn_all_field,pixel,polygon_id,868,83,1,1000,5,20,0.8469621380859486,0.7552982806303934,17360,0.8476382488479263,0.7596923623461442
+best_target,compared_targets,predictors,target,training_unit,validation_group,n_training_rows,n_training_polygons,selected_mtry,ntree,cv_folds,cv_repeats,repeated_cv_predictions,overall_accuracy,kappa
+gpi_class_knn_all_field,"gpi_class_knn_all_field, gpi_class_rbc_soil_richness","s2rep, msi",gpi_class_knn_all_field,pixel,polygon_id,868,83,1,1000,5,20,17360,0.8476382488479263,0.7596923623461442

@@ -1,5 +1,4 @@
-# Check whether the calibration table reflects sensible ecological structure.
-# These plots and summaries are diagnostics only and do not feed into the classifier.
+# Plot field data against S2REP values to assess relationships.
 
 source("config.R")
 
@@ -41,7 +40,7 @@ fit_models <- function(var) {
 model_summary <- map_dfr(vars, fit_models)
 write_csv(model_summary, path_environmental_validation_summary())
 
-# Use stronger model form in plots
+# Plot top model (lm or GAM)
 plot_relationship <- function(var, xlab) {
   best_model <- model_summary %>%
     filter(predictor == var) %>%
