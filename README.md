@@ -30,11 +30,6 @@ source("scripts/run_prediction_only.R")
 
 ## Workflow Logic
 
-The project uses two spatial units:
-
-- `zone`: sampled training polygons identified by `polygon_id`
-- `field`: the reporting layer used to summarize the final pixel map
-
 Sampled zones carry field measurements and observer labels. Those labels are converted into a
 weighted KNN-derived GPI target. The labeled zones are then used as training masks, so all
 predictor pixels inside each zone inherit the zone label. The trained random forest is applied
