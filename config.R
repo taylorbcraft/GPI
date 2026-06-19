@@ -23,9 +23,7 @@ predictor_bands <- c(
 # Only these bands enter the final random forest model.
 model_predictor_bands <- c(
   "s2rep",
-  "msi",
-  "ndmi",
-  "mndwi"
+  "msi"
 )
 
 # KNN turns field measurements into the supervised training target.
@@ -52,7 +50,13 @@ paths <- list(
   figure_dir = "figures"
 )
 
+custom_predictor_rasters <- c()
+
 path_raster <- function(band_name, image_date) {
+  if (band_name %in% names(custom_predictor_rasters)) {
+    return(custom_predictor_rasters[[band_name]])
+  }
+
   file.path(paths$raster_dir, paste0(band_name, "_", image_date, "_mosaic.tif"))
 }
 
@@ -142,4 +146,33 @@ path_pixel_map_preview <- function() {
 
 ensure_dirs <- function(dir_paths) {
   invisible(lapply(dir_paths, dir.create, recursive = TRUE, showWarnings = FALSE))
+}
+
+load_predictor_stack <- function(band_names, image_date, resample_method = "near") {
+  raster_list <- vector("list", length(band_names))
+  names(raster_list) <- band_names
+  template <- NULL
+
+  for (band_name in band_names) {
+    raster_layer <- rast(path_raster(band_name, image_date))
+    names(raster_layer) <- band_name
+
+    if (is.null(template)) {
+      template <- raster_layer
+    } else if (!compareGeom(template, raster_layer, stopOnError = FALSE)) {
+      if (!same.crs(template, raster_layer)) {
+        raster_layer <- project(raster_layer, template, method = resample_method)
+      } else {
+        raster_layer <- resample(raster_layer, template, method = resample_method)
+      }
+    }
+
+    if (band_name == "s2rep") {
+      raster_layer <- clamp(raster_layer, lower = 600, upper = 850, values = TRUE)
+    }
+
+    raster_list[[band_name]] <- raster_layer
+  }
+
+  rast(raster_list)
 }

@@ -8,16 +8,10 @@ library(terra)
 ensure_dirs(paths$prediction_dir)
 
 # Load only model bands
-predictor_stack <- model_predictor_bands %>%
-  set_names() %>%
-  map(~ rast(path_prediction_raster(.x)))
-
-if ("s2rep" %in% names(predictor_stack)) {
-  predictor_stack$s2rep <- clamp(predictor_stack$s2rep, lower = 600, upper = 850, values = TRUE)
-}
-
-predictor_stack <- rast(predictor_stack)
-names(predictor_stack) <- model_predictor_bands
+predictor_stack <- load_predictor_stack(
+  band_names = model_predictor_bands,
+  image_date = prediction_image_date
+)
 
 writeRaster(
   predictor_stack,

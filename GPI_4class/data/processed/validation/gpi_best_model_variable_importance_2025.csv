@@ -1,5 +1,0 @@
-target,predictor,mean_decrease_accuracy
-gpi_class_knn_all_field,s2rep,88.43744928869894
-gpi_class_knn_all_field,mndwi,75.11673649062622
-gpi_class_knn_all_field,msi,63.157247292989034
-gpi_class_knn_all_field,ndmi,63.04590036333337

@@ -1,6 +1,6 @@
-# Train the pixel-level random forest.
-# Each pixel inherits its polygon's KNN-derived class label, and grouped
-# cross-validation evaluates how well the model transfers to held-out polygons.
+# Train pixel-level random forests for each candidate target
+# Each pixel inherits its polygon's candidate class label, and grouped
+# cross-validation compares which target transfers best to held-out polygons
 
 source("config.R")
 
@@ -187,11 +187,106 @@ summarise_confusion <- function(pred, ref, target_var) {
   )
 }
 
+# Fit and score one candidate target
+fit_target_model <- function(target_var, pixel_labels) {
+  pixel_training_data <- pixel_labels %>%
+    transmute(
+      cell_id,
+      x,
+      y,
+      polygon_id,
+      meadow_id,
+      gpi_class = factor(.data[[target_var]], levels = gpi_class_levels),
+      across(all_of(model_predictor_bands))
+    ) %>%
+    drop_na(gpi_class, all_of(model_predictor_bands))
+
+  tuning_results <- tune_mtry_repeated_cv(
+    data = pixel_training_data,
+    predictors = model_predictor_bands,
+    mtry_values = seq_along(model_predictor_bands),
+    seed = 123
+  )
+
+  selected_mtry <- tuning_results %>%
+    slice(1) %>%
+    pull(mtry)
+
+  repeated_cv_predictions <- predict_repeated_cv(
+    data = pixel_training_data,
+    predictors = model_predictor_bands,
+    mtry = selected_mtry,
+    seed = 124
+  )
+
+  repeated_cv_eval <- summarise_confusion(
+    pred = repeated_cv_predictions$prediction,
+    ref = repeated_cv_predictions$reference,
+    target_var = target_var
+  )
+
+  fitted_model <- randomForest(
+    x = pixel_training_data %>% select(all_of(model_predictor_bands)),
+    y = pixel_training_data$gpi_class,
+    mtry = selected_mtry,
+    ntree = rf_ntree,
+    importance = TRUE
+  )
+
+  summary_tbl <- tibble(
+    target = target_var,
+    training_unit = "pixel",
+    validation_group = "polygon_id",
+    n_training_rows = nrow(pixel_training_data),
+    n_training_polygons = n_distinct(pixel_training_data$polygon_id),
+    selected_mtry = selected_mtry,
+    ntree = rf_ntree,
+    cv_folds = cv_folds,
+    cv_repeats = cv_repeats,
+    tuning_accuracy = tuning_results %>% slice(1) %>% pull(Accuracy),
+    tuning_kappa = tuning_results %>% slice(1) %>% pull(Kappa),
+    repeated_cv_predictions = nrow(repeated_cv_predictions),
+    overall_accuracy = repeated_cv_eval$summary$overall_accuracy,
+    kappa = repeated_cv_eval$summary$kappa
+  )
+
+  tuning_tbl <- tuning_results %>%
+    as_tibble() %>%
+    mutate(
+      target = target_var,
+      training_unit = "pixel",
+      validation_group = "polygon_id",
+      ntree = rf_ntree,
+      cv_folds = cv_folds,
+      cv_repeats = cv_repeats,
+      selected = mtry == selected_mtry,
+      .before = 1
+    )
+
+  importance_tbl <- importance(fitted_model, type = 1) %>%
+    as.data.frame() %>%
+    rownames_to_column("predictor") %>%
+    as_tibble() %>%
+    rename(mean_decrease_accuracy = `MeanDecreaseAccuracy`) %>%
+    mutate(target = target_var, .before = 1) %>%
+    arrange(desc(mean_decrease_accuracy))
+
+  list(
+    target = target_var,
+    model = fitted_model,
+    summary = summary_tbl,
+    tuning = tuning_tbl,
+    confusion = repeated_cv_eval$confusion,
+    class_accuracy = repeated_cv_eval$class_accuracy,
+    importance = importance_tbl
+  )
+}
+
 ensure_dirs(c(paths$validation_dir, paths$model_dir))
 
-# Read KNN target
+# Read candidate targets
 zone_labels <- read_csv(path_candidate_training(), show_col_types = FALSE)
-target_var <- names(zone_labels) %>% str_subset("^gpi_class_") %>% dplyr::first()
+target_vars <- names(zone_labels) %>% str_subset("^gpi_class_")
 
 zones <- st_read(paths$sampled_zone_geometry, quiet = TRUE) %>%
   clean_names() %>%
@@ -201,32 +296,26 @@ zones <- st_read(paths$sampled_zone_geometry, quiet = TRUE) %>%
   )
 
 # Load calibration rasters
-predictor_stack <- model_predictor_bands %>%
-  set_names() %>%
-  map(~ rast(path_calibration_raster(.x)))
-
-if ("s2rep" %in% names(predictor_stack)) {
-  predictor_stack$s2rep <- clamp(predictor_stack$s2rep, lower = 600, upper = 850, values = TRUE)
-}
-
-predictor_stack <- rast(predictor_stack)
+predictor_stack <- load_predictor_stack(
+  band_names = model_predictor_bands,
+  image_date = calibration_image_date
+)
 zones <- st_transform(zones, crs(predictor_stack))
 
-# Join polygon labels and extract pixel rows
+# Join polygon labels and extract pixel rows once
 labeled_zones <- zones %>%
   left_join(
     zone_labels %>%
-      select(polygon_id, meadow_id, all_of(target_var)) %>%
+      select(polygon_id, meadow_id, all_of(target_vars)) %>%
       mutate(
         polygon_id = as.character(polygon_id),
         meadow_id = as.character(meadow_id),
-        across(all_of(target_var), ~ factor(.x, levels = gpi_class_levels))
+        across(all_of(target_vars), ~ factor(.x, levels = gpi_class_levels))
       ),
     by = c("polygon_id", "meadow_id")
-  ) %>%
-  filter(!is.na(.data[[target_var]]))
+  )
 
-pixel_training_data <- terra::extract(
+pixel_labels <- terra::extract(
   x = predictor_stack,
   y = vect(labeled_zones),
   cells = TRUE,
@@ -237,96 +326,37 @@ pixel_training_data <- terra::extract(
   left_join(
     st_drop_geometry(labeled_zones) %>%
       mutate(zone_row = row_number()) %>%
-      select(zone_row, polygon_id, meadow_id, all_of(target_var)),
+      select(zone_row, polygon_id, meadow_id, all_of(target_vars)),
     by = "zone_row"
   ) %>%
-  rename(gpi_class = all_of(target_var)) %>%
-  drop_na(gpi_class, all_of(model_predictor_bands)) %>%
   mutate(
-    gpi_class = factor(gpi_class, levels = gpi_class_levels),
     polygon_id = as.character(polygon_id),
     meadow_id = as.character(meadow_id)
-  ) %>%
-  select(cell_id, x, y, polygon_id, meadow_id, gpi_class, all_of(model_predictor_bands))
-
-# Tune mtry
-tuning_results <- tune_mtry_repeated_cv(
-  data = pixel_training_data,
-  predictors = model_predictor_bands,
-  mtry_values = seq_along(model_predictor_bands),
-  seed = 123
-)
-
-selected_mtry <- tuning_results %>%
-  slice(1) %>%
-  pull(mtry)
-
-repeated_cv_predictions <- predict_repeated_cv(
-  data = pixel_training_data,
-  predictors = model_predictor_bands,
-  mtry = selected_mtry,
-  seed = 124
-)
-
-repeated_cv_eval <- summarise_confusion(
-  pred = repeated_cv_predictions$prediction,
-  ref = repeated_cv_predictions$reference,
-  target_var = target_var
-)
-
-# Fit final forest
-fitted_model <- randomForest(
-  x = pixel_training_data %>% select(all_of(model_predictor_bands)),
-  y = pixel_training_data$gpi_class,
-  mtry = selected_mtry,
-  ntree = rf_ntree,
-  importance = TRUE
-)
-
-summary_tbl <- tibble(
-  target = target_var,
-  training_unit = "pixel",
-  validation_group = "polygon_id",
-  n_training_rows = nrow(pixel_training_data),
-  n_training_polygons = n_distinct(pixel_training_data$polygon_id),
-  selected_mtry = selected_mtry,
-  ntree = rf_ntree,
-  cv_folds = cv_folds,
-  cv_repeats = cv_repeats,
-  tuning_accuracy = tuning_results %>% slice(1) %>% pull(Accuracy),
-  tuning_kappa = tuning_results %>% slice(1) %>% pull(Kappa),
-  repeated_cv_predictions = nrow(repeated_cv_predictions),
-  overall_accuracy = repeated_cv_eval$summary$overall_accuracy,
-  kappa = repeated_cv_eval$summary$kappa
-)
-
-tuning_tbl <- tuning_results %>%
-  as_tibble() %>%
-  mutate(
-    target = target_var,
-    training_unit = "pixel",
-    validation_group = "polygon_id",
-    ntree = rf_ntree,
-    cv_folds = cv_folds,
-    cv_repeats = cv_repeats,
-    selected = mtry == selected_mtry,
-    .before = 1
   )
 
-importance_tbl <- importance(fitted_model, type = 1) %>%
-  as.data.frame() %>%
-  rownames_to_column("predictor") %>%
-  as_tibble() %>%
-  rename(mean_decrease_accuracy = `MeanDecreaseAccuracy`) %>%
-  mutate(target = target_var, .before = 1) %>%
-  arrange(desc(mean_decrease_accuracy))
+# Fit all candidate targets
+target_results <- map(target_vars, ~ fit_target_model(.x, pixel_labels))
+target_summary <- map_dfr(target_results, "summary")
+tuning_tbl <- map_dfr(target_results, "tuning")
+
+best_result <- target_results %>%
+  set_names(target_vars) %>%
+  pluck(
+    target_summary %>%
+      arrange(desc(kappa), desc(overall_accuracy), target) %>%
+      slice(1) %>%
+      pull(target)
+  )
+
+best_target <- best_result$target
+compared_targets <- paste(target_vars, collapse = ", ")
 
 # Save diagnostics and model
 write_csv(
-  summary_tbl %>%
+  target_summary %>%
     mutate(
-      best_target = target_var,
-      compared_targets = target_var,
+      best_target = best_target,
+      compared_targets = compared_targets,
       predictors = paste(model_predictor_bands, collapse = ", "),
       .before = 1
     ),
@@ -334,18 +364,18 @@ write_csv(
 )
 
 write_csv(tuning_tbl, path_model_tuning())
-write_csv(repeated_cv_eval$confusion, path_best_model_confusion())
-write_csv(repeated_cv_eval$class_accuracy, path_best_model_class_accuracy())
-write_csv(importance_tbl, path_best_model_variable_importance())
+write_csv(best_result$confusion, path_best_model_confusion())
+write_csv(best_result$class_accuracy, path_best_model_class_accuracy())
+write_csv(best_result$importance, path_best_model_variable_importance())
 write_csv(
-  summary_tbl %>%
+  best_result$summary %>%
     mutate(
-      best_target = target_var,
-      compared_targets = target_var,
+      best_target = best_target,
+      compared_targets = compared_targets,
       predictors = paste(model_predictor_bands, collapse = ", "),
       .before = 1
     ),
   path_best_model_metadata()
 )
 
-saveRDS(fitted_model, path_best_model())
+saveRDS(best_result$model, path_best_model())

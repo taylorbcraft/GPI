@@ -1,11 +1,12 @@
-# Build the supervised class target with leave-one-out KNN.
+# Build supervised class targets with KNN and RBC
 # Observer-estimated GPI supplies the class names, and ecological similarity
-# across polygons regularizes the final target used in classification.
+# or explicit field-variable rules create comparison targets
 
 source("config.R")
 
 library(tidyverse)
 library(patchwork)
+library(caret)
 
 field_feature_cols <- c(
   "soil_resistance_std",
@@ -22,6 +23,18 @@ min_max_rescale <- function(x) {
   }
 
   (x - rng[1]) / (rng[2] - rng[1])
+}
+
+classification_metrics <- function(reference, prediction) {
+  cm <- confusionMatrix(
+    data = factor(prediction, levels = gpi_class_levels),
+    reference = factor(reference, levels = gpi_class_levels)
+  )
+
+  tibble(
+    accuracy = unname(cm$overall["Accuracy"]),
+    kappa = unname(cm$overall["Kappa"])
+  )
 }
 
 weighted_distance_class <- function(labels, distances) {
@@ -74,20 +87,93 @@ knn_leave_one_out <- function(data, feature_cols, k) {
   factor(predicted, levels = gpi_class_levels)
 }
 
+derive_rbc_3class <- function(data) {
+  valid <- complete.cases(data[, c("soil_resistance_std", "plant_richness_std", "observer_estimated_GPI")])
+  work <- data[valid, ]
+
+  class_iqr <- work %>%
+    group_by(observer_estimated_GPI) %>%
+    summarise(
+      resistance_q1 = quantile(soil_resistance_std, probs = 0.25, na.rm = TRUE),
+      resistance_q3 = quantile(soil_resistance_std, probs = 0.75, na.rm = TRUE),
+      richness_q1 = quantile(plant_richness_std, probs = 0.25, na.rm = TRUE),
+      richness_q3 = quantile(plant_richness_std, probs = 0.75, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(observer_estimated_GPI = factor(observer_estimated_GPI, levels = gpi_class_levels)) %>%
+    arrange(observer_estimated_GPI)
+
+  extensive_iqr <- class_iqr %>% filter(observer_estimated_GPI == "extensive")
+  intensive_iqr <- class_iqr %>% filter(observer_estimated_GPI == "intensive")
+
+  resistance_cutoff <- mean(c(extensive_iqr$resistance_q3, intensive_iqr$resistance_q1))
+  richness_cutoff <- mean(c(extensive_iqr$richness_q1, intensive_iqr$richness_q3))
+
+  predicted_all <- rep(NA_character_, nrow(data))
+  predicted_all[valid] <- case_when(
+    work$soil_resistance_std <= resistance_cutoff & work$plant_richness_std >= richness_cutoff ~ "extensive",
+    work$soil_resistance_std > resistance_cutoff & work$plant_richness_std < richness_cutoff ~ "intensive",
+    TRUE ~ "mid"
+  )
+
+  metrics <- classification_metrics(work$observer_estimated_GPI, predicted_all[valid])
+
+  list(
+    classes = factor(predicted_all, levels = gpi_class_levels),
+    summary = bind_rows(
+      tibble(
+        record_type = "method",
+        target = "gpi_class_rbc_soil_richness",
+        setting = c("algorithm", "resistance_cutoff", "richness_cutoff", "input_variables", "threshold_source", "threshold_scale", "label_reference", "agreement_accuracy", "agreement_kappa"),
+        value = c(
+          "rule_based_classification",
+          format(resistance_cutoff, digits = 6),
+          format(richness_cutoff, digits = 6),
+          "soil_resistance_std, plant_richness_std",
+          "initial_observer_class_iqr_ranges",
+          "min_max_standardized",
+          "observer_estimated_GPI",
+          format(metrics$accuracy, digits = 6),
+          format(metrics$kappa, digits = 6)
+        )
+      ),
+      class_iqr %>%
+        mutate(
+          target = "gpi_class_rbc_soil_richness",
+          record_type = "class_iqr",
+          class = as.character(observer_estimated_GPI)
+        ) %>%
+        pivot_longer(
+          cols = c(resistance_q1, resistance_q3, richness_q1, richness_q3),
+          names_to = "setting",
+          values_to = "value"
+        ) %>%
+        transmute(
+          record_type,
+          target,
+          setting = paste(class, setting, sep = "_"),
+          value = format(value, digits = 6)
+        )
+    )
+  )
+}
+
 ensure_dirs(c(paths$training_dir, paths$validation_dir, paths$figure_dir))
 
 # Read anchor table and set class order
 dat <- read_csv(path_anchor_training(), show_col_types = FALSE) %>%
   mutate(observer_estimated_GPI = factor(observer_estimated_GPI, levels = gpi_class_levels))
 
-# Standardize field gradients before KNN
+# Standardize field gradients and build targets
 candidate_gpi_training_data <- dat %>%
   mutate(
     soil_resistance_std = min_max_rescale(soil_resistance),
     soil_moisture_std = min_max_rescale(soil_moisture),
     plant_richness_std = min_max_rescale(plant_richness_mean),
     vegetation_height_std = min_max_rescale(vegetation_height)
-  ) %>%
+  )
+
+candidate_gpi_training_data <- candidate_gpi_training_data %>%
   mutate(
     gpi_class_knn_all_field = knn_leave_one_out(
       data = .,
@@ -96,8 +182,13 @@ candidate_gpi_training_data <- dat %>%
     )
   )
 
-# Save KNN recipe and class counts
-knn_summary <- bind_rows(
+rbc_result <- derive_rbc_3class(candidate_gpi_training_data)
+
+candidate_gpi_training_data <- candidate_gpi_training_data %>%
+  mutate(gpi_class_rbc_soil_richness = rbc_result$classes)
+
+# Save KNN and RBC settings
+target_summary <- bind_rows(
   tibble(
     record_type = "method",
     target = "gpi_class_knn_all_field",
@@ -124,13 +215,22 @@ knn_summary <- bind_rows(
       target = "gpi_class_knn_all_field",
       setting = as.character(gpi_class_knn_all_field),
       value = as.character(n)
+    ),
+  rbc_result$summary,
+  candidate_gpi_training_data %>%
+    count(gpi_class_rbc_soil_richness, name = "n") %>%
+    transmute(
+      record_type = "class_count",
+      target = "gpi_class_rbc_soil_richness",
+      setting = as.character(gpi_class_rbc_soil_richness),
+      value = as.character(n)
     )
 )
 
-write_csv(knn_summary, path_estimated_thresholds())
+write_csv(target_summary, path_estimated_thresholds())
 write_csv(candidate_gpi_training_data, path_candidate_training())
 
-# Compare observer and KNN labels on S2REP
+# Compare observer, KNN, and RBC labels on S2REP
 p1 <- ggplot(candidate_gpi_training_data, aes(x = observer_estimated_GPI, y = s2rep)) +
   geom_boxplot() +
   labs(x = "observer_estimated_GPI", y = "s2rep") +
@@ -138,15 +238,20 @@ p1 <- ggplot(candidate_gpi_training_data, aes(x = observer_estimated_GPI, y = s2
 
 p2 <- ggplot(candidate_gpi_training_data, aes(x = gpi_class_knn_all_field, y = s2rep)) +
   geom_boxplot() +
-  labs(x = "weighted KNN all field variables", y = "s2rep") +
+  labs(x = "weighted KNN", y = "s2rep") +
   theme_bw()
 
-candidate_plot <- p1 + p2 + plot_layout(ncol = 2)
+p3 <- ggplot(candidate_gpi_training_data, aes(x = gpi_class_rbc_soil_richness, y = s2rep)) +
+  geom_boxplot() +
+  labs(x = "RBC soil + richness", y = "s2rep") +
+  theme_bw()
+
+candidate_plot <- p1 + p2 + p3 + plot_layout(ncol = 3)
 
 ggsave(
   filename = path_candidate_class_plot(),
   plot = candidate_plot,
-  width = 8,
+  width = 12,
   height = 4,
   dpi = 300
 )
