@@ -1,6 +1,6 @@
-# Apply the saved random forest to the prediction-year raster stack.
-# This script writes the pixel-level map and summarizes the result
-# back to the reporting polygons for field-level outputs.
+# Build the prediction-year raster stack and apply the saved random forest.
+# Write the pixel-level GPI map, summarize predicted classes to fields,
+# and save preview figures for quick checks.
 
 source("config.R")
 
@@ -12,8 +12,7 @@ library(exactextractr)
 library(janitor)
 library(ggplot2)
 
-# Convert RF class labels back into integer ids so the predicted raster can be
-# stored compactly and linked back to the ordered class legend.
+# class index prediction
 rf_predict_index <- function(model, data) {
   predictor_df <- as.data.frame(data)
   complete_rows <- complete.cases(predictor_df)
@@ -27,8 +26,7 @@ rf_predict_index <- function(model, data) {
   out
 }
 
-# Summarize the classified raster to each field using coverage-weighted class
-# totals, which handles edge cells that only partially overlap a polygon.
+# field-level class summary
 summarise_field_classes <- function(values, coverage_fraction) {
   coverage_valid <- !is.na(coverage_fraction)
   total_coverage <- sum(coverage_fraction[coverage_valid])
@@ -44,8 +42,7 @@ summarise_field_classes <- function(values, coverage_fraction) {
     ))
   }
 
-  # Pool pixel coverage by class within the field, then convert those totals
-  # into class fractions and identify the dominant class.
+  # coverage-weighted class fractions
   value_tbl <- tibble(
     class_id = values[valid],
     weight = coverage_fraction[valid]
@@ -73,13 +70,22 @@ summarise_field_classes <- function(values, coverage_fraction) {
 
 ensure_dirs(c(paths$prediction_dir, paths$spatial_dir, paths$figure_dir))
 
-# Read saved model and prediction stack
-predictor_stack <- rast(path_prediction_stack())
-names(predictor_stack) <- model_predictor_bands
+# build prediction stack
+predictor_stack <- load_predictor_stack(
+  band_names = model_predictor_bands,
+  image_date = prediction_image_date
+)
 
+writeRaster(
+  predictor_stack,
+  filename = path_prediction_stack(),
+  overwrite = TRUE
+)
+
+# load saved model
 gpi_best_model <- readRDS(path_best_model())
 
-# Predict every cell and write raster
+# predict pixel classes
 pixel_gpi_map <- terra::predict(
   object = predictor_stack,
   model = gpi_best_model,
@@ -105,8 +111,7 @@ levels(pixel_gpi_map) <- data.frame(
   gpi_class = gpi_class_levels
 )
 
-# Summarize the pixel map to the reporting polygons used for field-level
-# outputs and downstream ecological interpretation.
+# summarize fields from raster
 fields <- st_read(paths$field_geometry, quiet = TRUE) %>%
   clean_names() %>%
   rename(field_id = meadow_id) %>%
@@ -134,8 +139,7 @@ st_write(
   quiet = TRUE
 )
 
-# Create lightweight preview figures so the final products can be checked
-# quickly without loading the full-resolution raster and geopackage.
+# save preview maps
 preview_raster <- aggregate(pixel_gpi_map, fact = 4, fun = modal, na.rm = TRUE)
 
 png(
@@ -155,7 +159,7 @@ plot(
 
 dev.off()
 
-# Save field map
+# save field preview
 ggsave(
   filename = path_field_map_preview(),
   plot = ggplot(field_gpi_map) +

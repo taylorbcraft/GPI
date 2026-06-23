@@ -1,11 +1,11 @@
 # Shared settings for the GPI pipeline.
-# The 2025 field data calibrate the model. Change prediction_year and
-# prediction_image_date to map another year with the saved calibration model.
+# Update the calibration and prediction dates here before running the scripts.
 
+# calibration year and imagery
 calibration_year <- "2025"
 calibration_image_date <- "2025-04-11"
 
-# Change these two values to make an annual map with the saved calibration model.
+# prediction year and imagery
 prediction_year <- "2025"
 prediction_image_date <- "2025-04-11"
 
@@ -20,13 +20,13 @@ predictor_bands <- c(
   "mndwi"
 )
 
-# Only these bands enter the final random forest model.
+# predictor bands used in rf
 model_predictor_bands <- c(
   "s2rep",
   "msi"
 )
 
-# Final mapped classes after collapsing the original four observer labels.
+# final ordered class labels
 gpi_class_levels <- c(
   "extensive",
   "mid",
@@ -75,6 +75,14 @@ path_candidate_training <- function() {
 
 path_environmental_validation_summary <- function() {
   file.path(paths$validation_dir, paste0("environmental_validation_summary_", calibration_year, ".csv"))
+}
+
+path_environmental_validation_coefficients <- function() {
+  file.path(paths$validation_dir, paste0("environmental_validation_coefficients_", calibration_year, ".csv"))
+}
+
+path_environmental_validation_full_summary <- function() {
+  file.path(paths$validation_dir, paste0("environmental_validation_full_summary_", calibration_year, ".txt"))
 }
 
 path_environmental_validation_plot <- function() {

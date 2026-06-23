@@ -1,6 +1,5 @@
-# Train pixel-level random forests for each candidate target
-# Each pixel inherits its polygon's candidate class label, and grouped
-# cross-validation compares which target transfers best to held-out polygons
+# Train pixel-level random forests for each candidate target.
+# Compare grouped cross-validation performance and save the best model outputs.
 
 source("config.R")
 
@@ -16,7 +15,7 @@ rf_mtry <- 1
 cv_folds <- 5
 cv_repeats <- 20
 
-# Keep whole polygons together across folds
+# polygon-grouped folds
 make_grouped_folds <- function(groups, labels, k, seed) {
   set.seed(seed)
 
@@ -48,7 +47,7 @@ make_grouped_folds <- function(groups, labels, k, seed) {
   map(fold_groups, ~ which(as.character(groups) %in% .x))
 }
 
-# Rerun grouped CV
+# repeated grouped cv
 predict_repeated_cv <- function(data, predictors, seed = 456) {
   resamples <- map(
     seq_len(cv_repeats),
@@ -95,7 +94,7 @@ predict_repeated_cv <- function(data, predictors, seed = 456) {
     unnest(predictions)
 }
 
-# Turn confusion matrix into output tables
+# confusion-matrix outputs
 summarise_confusion <- function(pred, ref, target_var) {
   cm <- confusionMatrix(
     data = factor(pred, levels = gpi_class_levels),
@@ -129,7 +128,7 @@ summarise_confusion <- function(pred, ref, target_var) {
   )
 }
 
-# Fit and score one candidate target
+# fit one candidate target
 fit_target_model <- function(target_var, pixel_labels) {
   pixel_training_data <- pixel_labels %>%
     transmute(
@@ -198,7 +197,7 @@ fit_target_model <- function(target_var, pixel_labels) {
 
 ensure_dirs(c(paths$validation_dir, paths$model_dir))
 
-# Read candidate targets
+# candidate target labels
 zone_labels <- read_csv(path_candidate_training(), show_col_types = FALSE)
 target_vars <- names(zone_labels) %>% str_subset("^gpi_class_")
 
@@ -209,14 +208,14 @@ zones <- st_read(paths$sampled_zone_geometry, quiet = TRUE) %>%
     meadow_id = str_remove(polygon_id, "_.*$")
   )
 
-# Load calibration rasters
+# calibration predictor stack
 predictor_stack <- load_predictor_stack(
   band_names = model_predictor_bands,
   image_date = calibration_image_date
 )
 zones <- st_transform(zones, crs(predictor_stack))
 
-# Join polygon labels and extract pixel rows once
+# pixel rows with polygon labels
 labeled_zones <- zones %>%
   left_join(
     zone_labels %>%
@@ -248,7 +247,7 @@ pixel_labels <- terra::extract(
     meadow_id = as.character(meadow_id)
   )
 
-# Fit all candidate targets
+# fit all candidate targets
 target_results <- map(target_vars, ~ fit_target_model(.x, pixel_labels))
 target_summary <- map_dfr(target_results, "summary")
 
@@ -264,7 +263,7 @@ best_result <- target_results %>%
 best_target <- best_result$target
 compared_targets <- paste(target_vars, collapse = ", ")
 
-# Save diagnostics and model
+# save diagnostics and model
 write_csv(
   target_summary %>%
     mutate(

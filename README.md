@@ -40,11 +40,10 @@ to fields for polygon-based reporting.
 | --- | --- | --- | --- |
 | 00 | `scripts/00_export_remote_sensing_from_gee.js` | Documents the raster export used by the R workflow. Run only when rasters need to be rebuilt. | `<band>_<date>_mosaic.tif` |
 | 01 | `scripts/01_build_anchor_training_data.R` | Joins sampled-zone geometry, field observations, plant richness, and calibration raster summaries into the anchor training table. | `anchor_zone_training_data_<calibration_year>.csv` |
-| 02 | `scripts/02_validate_environmental_relationships.R` | Checks whether `s2rep` has interpretable relationships with measured ecological variables. | validation summary CSV and figure |
+| 02 | `scripts/02_validate_environmental_relationships.R` | Checks whether `s2rep` has interpretable relationships with measured ecological variables. | validation summary CSV, coefficients CSV, full model summary text, and figure |
 | 03 | `scripts/03_define_candidate_gpi_classes.R` | Defines the supervised target with leave-one-out KNN over standardized field variables. | `candidate_gpi_training_data_<calibration_year>.csv`, KNN summary, boxplot |
 | 04 | `scripts/04_train_gpi_classifier.R` | Extracts labeled pixels from sampled zones, fits the random forest with grouped cross-validation using a fixed `mtry`, and saves diagnostics plus the selected model. | model RDS and validation tables |
-| 05 | `scripts/05_build_prediction_stack.R` | Builds the prediction-year predictor raster stack used directly by the pixel classifier. | `pixel_predictor_stack_<prediction_year>.tif` |
-| 06 | `scripts/06_predict_pixel_map.R` | Applies the saved calibration model pixel by pixel, summarizes the classified raster back to fields, and writes the final map products. | `pixel_gpi_map_<prediction_year>.tif`, `field_gpi_pixel_summary_<prediction_year>.csv`, `field_gpi_map_<prediction_year>.gpkg`, PNG previews |
+| 05 | `scripts/05_predict_pixel_map.R` | Builds the prediction-year predictor raster stack, applies the saved calibration model pixel by pixel, summarizes the classified raster back to fields, and writes the final map products. | `pixel_predictor_stack_<prediction_year>.tif`, `pixel_gpi_map_<prediction_year>.tif`, `field_gpi_pixel_summary_<prediction_year>.csv`, `field_gpi_map_<prediction_year>.gpkg`, PNG previews |
 
 ## Project Layout
 
@@ -111,7 +110,7 @@ Training outputs:
 
 Validation outputs:
 
-- environmental validation summary and figure
+- environmental validation summary, coefficients, full model summaries, and figure
 - KNN method summary and class counts
 - random forest confusion matrix, class accuracy, variable importance,
   model comparison, and selected-model metadata

@@ -1,4 +1,5 @@
-# Build supervised class targets with KNN and RBC
+# Build candidate supervised class targets from the field data.
+# Compare leave-one-out KNN labels with a rule-based soil- plant species richness target.
 
 source("config.R")
 
@@ -15,8 +16,7 @@ field_feature_cols <- c(
   "vegetation_height_std"
 )
 
-# Put all field variables on a common  scale before distance-based
-# classification so no single variable dominates because of its units
+# rescale field gradients
 min_max_rescale <- function(x) {
   rng <- range(x, na.rm = TRUE)
 
@@ -27,7 +27,7 @@ min_max_rescale <- function(x) {
   (x - rng[1]) / (rng[2] - rng[1])
 }
 
-# Summarize how closely each derived target reproduces the observer labels
+# label agreement metrics
 classification_metrics <- function(reference, prediction) {
   cm <- confusionMatrix(
     data = factor(prediction, levels = gpi_class_levels),
@@ -40,9 +40,7 @@ classification_metrics <- function(reference, prediction) {
   )
 }
 
-# Convert the neighbor set into one class label using inverse-distance
-# weighting. If two classes tie on total weight, prefer the one with the
-# smaller mean neighbor distance
+# inverse-distance vote
 weighted_distance_class <- function(labels, distances) {
   weights <- 1 / (distances + 1e-6)
   weight_tbl <- tibble(label = factor(labels, levels = gpi_class_levels), weight = weights) %>%
@@ -64,8 +62,7 @@ weighted_distance_class <- function(labels, distances) {
   tied_classes[which.min(mean_distances)]
 }
 
-# Leave-one-out KNN assigns each polygon using all other polygons as the
-# reference set, which avoids letting a polygon vote for its own label
+# leave-one-out knn labels
 knn_leave_one_out <- function(data, feature_cols, k) {
   feature_matrix <- data %>%
     select(all_of(feature_cols)) %>%
@@ -81,7 +78,7 @@ knn_leave_one_out <- function(data, feature_cols, k) {
     }
 
     candidate_rows <- which(complete_rows & seq_len(nrow(data)) != i)
-    # Distances are measured in standardized field-variable space
+    # distances in scaled field space
     distances <- sqrt(rowSums(
       sweep(feature_matrix[candidate_rows, , drop = FALSE], 2, feature_matrix[i, ], "-")^2
     ))
@@ -96,9 +93,7 @@ knn_leave_one_out <- function(data, feature_cols, k) {
   factor(predicted, levels = gpi_class_levels)
 }
 
-# Build a rule-based comparison target from the standardized soil
-# resistance and richness gradients. The cutoffs are anchored to the
-# observer-defined extensive and intensive class distributions
+# rule-based comparison target
 derive_rbc_3class <- function(data) {
   valid <- complete.cases(data[, c("soil_resistance_std", "plant_richness_std", "observer_estimated_GPI")])
   work <- data[valid, ]
@@ -121,8 +116,7 @@ derive_rbc_3class <- function(data) {
   resistance_cutoff <- mean(c(extensive_iqr$resistance_q3, intensive_iqr$resistance_q1))
   richness_cutoff <- mean(c(extensive_iqr$richness_q1, intensive_iqr$richness_q3))
 
-  # Assign the extremes when both variables support the same direction;
-  # otherwise route ambiguous cases to the middle class
+  # threshold-based class assignment
   predicted_all <- rep(NA_character_, nrow(data))
   predicted_all[valid] <- case_when(
     work$soil_resistance_std <= resistance_cutoff & work$plant_richness_std >= richness_cutoff ~ "extensive",
@@ -174,12 +168,11 @@ derive_rbc_3class <- function(data) {
 
 ensure_dirs(c(paths$training_dir, paths$validation_dir, paths$figure_dir))
 
-# Read anchor table and set class order
+# anchor training data
 dat <- read_csv(path_anchor_training(), show_col_types = FALSE) %>%
   mutate(observer_estimated_GPI = factor(observer_estimated_GPI, levels = gpi_class_levels))
 
-# Standardize the field gradients once, then use the same scaled variables
-# for both the KNN target and the rule-based comparison target.
+# standardized field variables
 candidate_gpi_training_data <- dat %>%
   mutate(
     soil_resistance_std = min_max_rescale(soil_resistance),
@@ -202,8 +195,7 @@ rbc_result <- derive_rbc_3class(candidate_gpi_training_data)
 candidate_gpi_training_data <- candidate_gpi_training_data %>%
   mutate(gpi_class_rbc_soil_richness = rbc_result$classes)
 
-# Write table that records the KNN setup, the RBC thresholds, and
-# the resulting class counts for both targets
+# target metadata and counts
 target_summary <- bind_rows(
   tibble(
     record_type = "method",
@@ -246,8 +238,7 @@ target_summary <- bind_rows(
 write_csv(target_summary, path_estimated_thresholds())
 write_csv(candidate_gpi_training_data, path_candidate_training())
 
-# A quick visual check of whether each target produces the expected ordering
-# along the continuous S2REP gradient
+# class ordering boxplots
 p1 <- ggplot(candidate_gpi_training_data, aes(x = observer_estimated_GPI, y = s2rep)) +
   geom_boxplot() +
   labs(x = "observer_estimated_GPI", y = "s2rep") +

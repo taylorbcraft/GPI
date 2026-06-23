@@ -1,5 +1,5 @@
-# Build the polygon-level training table.
-# This script joins field measurements and raster summaries for each sampled habitat polygon.
+# Build the polygon-level anchor training table.
+# Join field measurements, plant richness, and raster summaries for sampled polygons.
 
 source("config.R")
 
@@ -20,7 +20,7 @@ normalize_gpi_label <- function(x) {
 
 ensure_dirs(paths$training_dir)
 
-# Standardize raw field labels
+# clean observer labels
 env <- read_csv(paths$raw_env, show_col_types = FALSE) %>%
   clean_names() %>%
   rename(observer_estimated_GPI = in_lui) %>%
@@ -33,7 +33,7 @@ env <- read_csv(paths$raw_env, show_col_types = FALSE) %>%
 plant_div <- read_csv(paths$raw_plant, show_col_types = FALSE) %>%
   clean_names()
 
-# Use sampled polygons as base geometry
+# sampled zone geometry
 zones <- st_read(paths$sampled_zone_geometry, quiet = TRUE) %>%
   clean_names() %>%
   mutate(
@@ -41,7 +41,7 @@ zones <- st_read(paths$sampled_zone_geometry, quiet = TRUE) %>%
     meadow_id = str_remove(polygon_id, "_.*$")
   )
 
-# Load calibration rasters and clamp S2REP
+# calibration raster layers
 predictor_rasters <- predictor_bands %>%
   set_names() %>%
   map(~ rast(path_calibration_raster(.x)))
@@ -52,7 +52,7 @@ if ("s2rep" %in% names(predictor_rasters)) {
 
 zones <- st_transform(zones, crs(predictor_rasters[[1]]))
 
-# Collapse repeat visits to one record per polygon
+# polygon field summaries
 env_summary <- env %>%
   group_by(polygon_id) %>%
   summarise(
@@ -71,7 +71,7 @@ plant_summary <- plant_div %>%
     .groups = "drop"
   )
 
-# Extract polygon-average raster values
+# polygon raster means
 predictor_summary <- imap_dfc(
   predictor_rasters,
   ~ tibble(!!.y := exact_extract(.x, zones, "mean"))

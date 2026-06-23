@@ -1,7 +1,5 @@
-// Record and rebuild the Sentinel-2 predictor rasters used by the R pipeline.
-// Run this in Google Earth Engine only when data/processed/rasters needs to be
-// regenerated. The local workflow expects one GeoTIFF per predictor band named
-// <band>_<date>_mosaic.tif.
+// Export the Sentinel-2 predictor rasters used by the R pipeline.
+// Run this in Google Earth Engine when the processed raster inputs need to be rebuilt.
 
 // Settings
 var studyArea = geometry;
@@ -15,7 +13,7 @@ var exportScale = 20;
 var exportFolder = 'gpi_2025';
 var exportPrefixDate = '2025-04-11';
 
-// Sentinel-2 surface reflectance and cloud probability collections
+// source image collections
 
 var s2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
   .filterBounds(studyArea)
@@ -36,7 +34,7 @@ var joined = ee.Join.saveFirst('cloud_mask').apply({
 
 var joinedCollection = ee.ImageCollection(joined);
 
-// Cloud mask, reflectance scaling, and spectral indices
+// masking and index helpers
 
 function maskClouds(img) {
   var cloudProb = ee.Image(img.get('cloud_mask')).select('probability');
@@ -90,7 +88,7 @@ function addIndices(img) {
   return img.addBands([s2rep, ndvi, ndwi, savi, evi, msi, ndmi, mndwi]);
 }
 
-// Build the target image
+// prediction-band composite
 
 var processed = joinedCollection
   .map(maskClouds)
@@ -103,7 +101,7 @@ var targetImage = processed
 
 targetImage = ee.Image(targetImage).clip(studyArea);
 
-// Visual checks in the Earth Engine map
+// map preview layers
 
 print('target image', targetImage);
 print('target image id', targetImage.get('system:index'));
@@ -126,7 +124,7 @@ Map.addLayer(
   'evi'
 );
 
-// Export the raster stack expected by config.R
+// geotiff exports
 
 function exportBand(image, bandName, fileName) {
   Export.image.toDrive({

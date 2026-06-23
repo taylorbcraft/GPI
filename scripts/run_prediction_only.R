@@ -1,8 +1,8 @@
-# Rebuild the prediction stack and apply the saved model to the current rasters.
+# Run the prediction-only pipeline.
+# This rebuilds the prediction stack and applies the saved model to current rasters.
 
 scripts_to_run <- c(
-  "scripts/05_build_prediction_stack.R",
-  "scripts/06_predict_pixel_map.R"
+  "scripts/05_predict_pixel_map.R"
 )
 
 for (script_path in scripts_to_run) {
