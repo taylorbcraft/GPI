@@ -42,7 +42,7 @@ to fields for polygon-based reporting.
 | 01 | `scripts/01_build_anchor_training_data.R` | Joins sampled-zone geometry, field observations, plant richness, and calibration raster summaries into the anchor training table. | `anchor_zone_training_data_<calibration_year>.csv` |
 | 02 | `scripts/02_validate_environmental_relationships.R` | Checks whether `s2rep` has interpretable relationships with measured ecological variables. | validation summary CSV, coefficients CSV, full model summary text, and figure |
 | 03 | `scripts/03_define_candidate_gpi_classes.R` | Defines the supervised target with leave-one-out KNN over standardized field variables. | `candidate_gpi_training_data_<calibration_year>.csv`, KNN summary, boxplot |
-| 04 | `scripts/04_train_gpi_classifier.R` | Extracts labeled pixels from sampled zones, fits the random forest with grouped cross-validation using a fixed `mtry`, and saves diagnostics plus the selected model. | model RDS and validation tables |
+| 04 | `scripts/04_train_gpi_classifier.R` | Extracts labeled pixels from sampled zones, runs forward predictor selection with grouped cross-validation, and saves diagnostics plus the selected model. | model RDS and validation tables |
 | 05 | `scripts/05_predict_pixel_map.R` | Builds the prediction-year predictor raster stack, applies the saved calibration model pixel by pixel, summarizes the classified raster back to fields, and writes the final map products. | `pixel_predictor_stack_<prediction_year>.tif`, `pixel_gpi_map_<prediction_year>.tif`, `field_gpi_pixel_summary_<prediction_year>.csv`, `field_gpi_map_<prediction_year>.gpkg`, PNG previews |
 
 ## Project Layout
@@ -135,7 +135,7 @@ Prediction and map outputs:
 - `calibration_year` and `calibration_image_date`
 - `prediction_year` and `prediction_image_date`
 - expected predictor bands
-- model predictor bands
+- candidate predictor bands and maximum predictors retained
 - ordered three-class GPI levels
 - canonical input and output paths
 

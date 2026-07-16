@@ -2,12 +2,13 @@
 # Update the calibration and prediction dates here before running the scripts.
 
 # calibration year and imagery
+# default workflow uses the April monthly median mosaic
 calibration_year <- "2025"
-calibration_image_date <- "2025-04-11"
+calibration_image_date <- "2025-04-median"
 
 # prediction year and imagery
 prediction_year <- "2025"
-prediction_image_date <- "2025-04-11"
+prediction_image_date <- "2025-04-median"
 
 predictor_bands <- c(
   "s2rep",
@@ -20,11 +21,14 @@ predictor_bands <- c(
   "mndwi"
 )
 
-# predictor bands used in rf
-model_predictor_bands <- c(
-  "s2rep",
-  "msi"
-)
+# candidate predictor bands considered in rf selection
+candidate_model_predictor_bands <- predictor_bands
+
+# max predictors retained by forward selection
+max_model_predictors <- 2
+
+# predictor aggregation unit used in classifier training
+model_training_unit <- "pixel"
 
 # final ordered class labels
 gpi_class_levels <- c(
@@ -143,6 +147,41 @@ path_field_map_preview <- function() {
 
 path_pixel_map_preview <- function() {
   file.path(paths$figure_dir, paste0("pixel_gpi_map_", prediction_year, ".png"))
+}
+
+path_s1_s2_class_comparison_summary <- function(polarization = "VV", year = prediction_year) {
+  file.path(
+    paths$validation_dir,
+    paste0("s1_s2_class_comparison_summary_", polarization, "_", year, ".csv")
+  )
+}
+
+path_s1_s2_class_comparison_stats <- function(polarization = "VV", year = prediction_year) {
+  file.path(
+    paths$validation_dir,
+    paste0("s1_s2_class_comparison_stats_", polarization, "_", year, ".txt")
+  )
+}
+
+path_s1_s2_class_comparison_tests <- function(polarization = "VV", year = prediction_year) {
+  file.path(
+    paths$validation_dir,
+    paste0("s1_s2_class_comparison_tests_", polarization, "_", year, ".csv")
+  )
+}
+
+path_s1_s2_field_values <- function(polarization = "VV", year = prediction_year) {
+  file.path(
+    paths$validation_dir,
+    paste0("s1_s2_field_values_", polarization, "_", year, ".csv")
+  )
+}
+
+path_s1_s2_class_comparison_plot <- function(polarization = "VV", year = prediction_year) {
+  file.path(
+    paths$figure_dir,
+    paste0("s1_s2_class_comparison_", polarization, "_", year, ".png")
+  )
 }
 
 ensure_dirs <- function(dir_paths) {

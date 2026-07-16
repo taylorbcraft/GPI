@@ -1,0 +1,6 @@
+test,comparison,statistic,df,estimate,estimate_label,p_value,p_adjustment
+kruskal_wallis,all classes,567.5048725764549,2,NA,NA,5.859798650608719e-124,NA
+pairwise_wilcoxon,mid vs extensive,NA,NA,NA,NA,1.2122029091356566e-27,holm
+pairwise_wilcoxon,intensive vs extensive,NA,NA,NA,NA,3.6385909376538395e-96,holm
+pairwise_wilcoxon,intensive vs mid,NA,NA,NA,NA,1.0643946738561159e-68,holm
+spearman_rank_correlation,class rank vs Sentinel-1 temporal SD,2650668096.880515,NA,0.43223022054699695,rho,1.6997611183311513e-138,NA

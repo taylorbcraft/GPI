@@ -3,10 +3,9 @@ Unique meadows: 42
 
 Model summary
 # A tibble: 1 × 10
-  model description    n_obs n_meadows   aic   bic  rmse r_squared adj_r_squared
-  <chr> <chr>          <int>     <int> <dbl> <dbl> <dbl>     <dbl>         <dbl>
-1 gam   Joint GAM wit…    83        42  234.  330. 0.611     0.935         0.935
-# ℹ 1 more variable: dev_explained <dbl>
+  model description                  n_obs n_meadows   aic   bic  rmse r_squared adj_r_squared dev_explained
+  <chr> <chr>                        <int>     <int> <dbl> <dbl> <dbl>     <dbl>         <dbl>         <dbl>
+1 gam   Joint GAM with meadow rando…    83        42  194.  292. 0.477     0.939         0.939         0.965
 
 Joint generalized additive model with meadow random effect
 
@@ -20,19 +19,19 @@ s2rep ~ s(soil_resistance, bs = "cs") + s(soil_moisture, bs = "cs") +
 
 Parametric coefficients:
             Estimate Std. Error t value Pr(>|t|)    
-(Intercept) 719.3771     0.1826    3939   <2e-16 ***
+(Intercept) 721.2306     0.1506    4788   <2e-16 ***
 ---
 Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
 
 Approximate significance of smooth terms:
                              edf Ref.df       F  p-value    
-s(soil_resistance)     2.615e+00      9  17.861 8.50e-07 ***
-s(soil_moisture)       1.433e+00      9   3.631  0.00319 ** 
-s(vegetation_height)   2.284e+00      9 119.503  < 2e-16 ***
-s(plant_richness_mean) 1.129e-04      9   0.000  0.58726    
-s(meadow_id)           2.817e+01     41   2.305 2.82e-05 ***
+s(soil_resistance)      2.589208      9  24.324  < 2e-16 ***
+s(soil_moisture)        1.280869      9   2.576   0.0121 *  
+s(vegetation_height)    2.319375      9 135.632  < 2e-16 ***
+s(plant_richness_mean)  0.001407      9   0.000   0.3234    
+s(meadow_id)           29.103986     41   2.641 7.25e-06 ***
 ---
 Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
 
-R-sq.(adj) =  0.935   Deviance explained = 96.2%
--REML = 137.89  Scale est. = 0.65264   n = 83
+R-sq.(adj) =  0.939   Deviance explained = 96.5%
+-REML = 119.96  Scale est. = 0.4051    n = 83

@@ -170,7 +170,7 @@ combined_plot <- ggplot(partial_effect_data, aes(x = x, y = fit)) +
   ) +
   facet_wrap(~ predictor_label, scales = "free_x") +
   labs(
-    title = "Adjusted S2REP relationships from the joint GAM",
+    title = "S2REP relationships with soil and vegetation properties",
     subtitle = "Points are raw observed data; lines show fitted relationships holding other field variables at their median values",
     x = NULL,
     y = "Predicted S2REP"
@@ -185,5 +185,5 @@ ggsave(
   height = 8,
   dpi = 300
 )
-
+  
 combined_plot

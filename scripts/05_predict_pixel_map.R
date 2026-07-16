@@ -70,9 +70,25 @@ summarise_field_classes <- function(values, coverage_fraction) {
 
 ensure_dirs(c(paths$prediction_dir, paths$spatial_dir, paths$figure_dir))
 
+# load saved model
+gpi_best_model <- readRDS(path_best_model())
+best_model_metadata <- read_csv(path_best_model_metadata(), show_col_types = FALSE)
+training_unit <- best_model_metadata$training_unit[[1]]
+selected_predictors <- best_model_metadata$predictors[[1]] %>%
+  str_split(",\\s*") %>%
+  .[[1]]
+
+if (!training_unit %in% c("pixel", "field")) {
+  stop("Saved model training_unit must be 'pixel' or 'field'.")
+}
+
+if (length(selected_predictors) == 0 || any(is.na(selected_predictors))) {
+  stop("Saved model metadata must include at least one predictor band.")
+}
+
 # build prediction stack
 predictor_stack <- load_predictor_stack(
-  band_names = model_predictor_bands,
+  band_names = selected_predictors,
   image_date = prediction_image_date
 )
 
@@ -82,55 +98,110 @@ writeRaster(
   overwrite = TRUE
 )
 
-# load saved model
-gpi_best_model <- readRDS(path_best_model())
-
-# predict pixel classes
-pixel_gpi_map <- terra::predict(
-  object = predictor_stack,
-  model = gpi_best_model,
-  fun = rf_predict_index,
-  overwrite = TRUE,
-  wopt = list(datatype = "INT1U")
-)
-
-if (file.exists(path_pixel_map())) {
-  file.remove(path_pixel_map())
-}
-
-writeRaster(
-  pixel_gpi_map,
-  filename = path_pixel_map(),
-  overwrite = TRUE,
-  datatype = "INT1U",
-  gdal = c("BIGTIFF=YES", "COMPRESS=LZW")
-)
-
-levels(pixel_gpi_map) <- data.frame(
-  value = seq_along(gpi_class_levels),
-  gpi_class = gpi_class_levels
-)
-
-# summarize fields from raster
 fields <- st_read(paths$field_geometry, quiet = TRUE) %>%
   clean_names() %>%
   rename(field_id = meadow_id) %>%
   mutate(field_id = as.character(field_id)) %>%
-  st_transform(crs(pixel_gpi_map))
+  st_transform(crs(predictor_stack))
 
-field_predictions <- exact_extract(
-  pixel_gpi_map,
-  fields,
-  summarise_field_classes,
-  progress = FALSE
-) %>%
-  bind_cols(fields %>% st_drop_geometry() %>% select(field_id)) %>%
-  relocate(field_id)
+if (training_unit == "pixel") {
+  # predict pixel classes
+  pixel_gpi_map <- terra::predict(
+    object = predictor_stack,
+    model = gpi_best_model,
+    fun = rf_predict_index,
+    overwrite = TRUE,
+    wopt = list(datatype = "INT1U")
+  )
+
+  if (file.exists(path_pixel_map())) {
+    file.remove(path_pixel_map())
+  }
+
+  writeRaster(
+    pixel_gpi_map,
+    filename = path_pixel_map(),
+    overwrite = TRUE,
+    datatype = "INT1U",
+    gdal = c("BIGTIFF=YES", "COMPRESS=LZW")
+  )
+
+  levels(pixel_gpi_map) <- data.frame(
+    value = seq_along(gpi_class_levels),
+    gpi_class = gpi_class_levels
+  )
+
+  # summarize fields from raster
+  field_predictions <- exact_extract(
+    pixel_gpi_map,
+    fields,
+    summarise_field_classes,
+    progress = FALSE
+  ) %>%
+    bind_cols(fields %>% st_drop_geometry() %>% select(field_id)) %>%
+    relocate(field_id)
+
+  field_gpi_map <- fields %>%
+    left_join(field_predictions, by = "field_id")
+} else {
+  # summarize predictors to fields
+  field_predictors <- exact_extract(
+    predictor_stack,
+    fields,
+    "mean",
+    progress = FALSE
+  ) %>%
+    as_tibble() %>%
+    rename_with(~ str_remove(.x, "^mean\\."))
+
+  predictor_complete <- complete.cases(field_predictors[, selected_predictors, drop = FALSE])
+  predicted_class <- rep(NA_character_, nrow(field_predictors))
+
+  if (any(predictor_complete)) {
+    predicted_class[predictor_complete] <- predict(
+      gpi_best_model,
+      newdata = field_predictors[predictor_complete, selected_predictors, drop = FALSE]
+    ) %>%
+      as.character()
+  }
+
+  field_predictions <- fields %>%
+    st_drop_geometry() %>%
+    select(field_id) %>%
+    bind_cols(field_predictors) %>%
+    mutate(
+      dominant_class = predicted_class,
+      classified_fraction = if_else(predictor_complete, 1, 0),
+      extensive_fraction = if_else(dominant_class == "extensive", 1, 0, missing = NA_real_),
+      mid_fraction = if_else(dominant_class == "mid", 1, 0, missing = NA_real_),
+      intensive_fraction = if_else(dominant_class == "intensive", 1, 0, missing = NA_real_)
+    )
+
+  field_gpi_map <- fields %>%
+    left_join(field_predictions, by = "field_id")
+
+  pixel_gpi_map <- rasterize(
+    x = vect(field_gpi_map),
+    y = predictor_stack[[1]],
+    field = match(field_gpi_map$dominant_class, gpi_class_levels),
+    background = NA
+  )
+
+  writeRaster(
+    pixel_gpi_map,
+    filename = path_pixel_map(),
+    overwrite = TRUE,
+    datatype = "INT1U",
+    gdal = c("BIGTIFF=YES", "COMPRESS=LZW")
+  )
+
+  levels(pixel_gpi_map) <- data.frame(
+    value = seq_along(gpi_class_levels),
+    gpi_class = gpi_class_levels
+  )
+}
 
 write_csv(field_predictions, path_pixel_predictions())
-
-field_gpi_map <- fields %>%
-  left_join(field_predictions, by = "field_id")
 
 st_write(
   field_gpi_map,

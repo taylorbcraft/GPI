@@ -1,0 +1,18 @@
+Sentinel-1 raster: data/processed/rasters/S1_VV_LogRatio_StdDev_Ascending_2025.tif
+Field map: data/processed/spatial/field_gpi_map_2025.gpkg
+Fields compared: 3037
+
+Kruskal-Wallis test
+chi-squared = 567.504872576455
+df = 2
+p-value = 5.85979865060872e-124
+
+Pairwise Wilcoxon tests (Holm-adjusted p-values)
+             extensive          mid
+mid       1.212203e-27           NA
+intensive 3.638591e-96 1.064395e-68
+
+Spearman rank correlation
+rho = 0.432230220546997
+S = 2650668096.88052
+p-value = 1.69976111833115e-138
