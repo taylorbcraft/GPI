@@ -9,3 +9,4 @@ __MACOSX/
 *.gpkg-wal
 data/raw/remote_sensing_downloads/
 .positai
+S2REP_manuscript.docx
