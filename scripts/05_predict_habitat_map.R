@@ -1,7 +1,7 @@
 # Apply the saved random forest and summarize pixel predictions to fields.
 # The script loads the selected Sentinel-2 predictors, classifies pixels in
 # memory, assigns each field its coverage-weighted dominant habitat class, and
-# writes the field GeoPackage and manuscript map figure.
+# writes the field GeoPackage and map figure.
 
 source("config.R")
 source("scripts/shared_raster_helpers.R")

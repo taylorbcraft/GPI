@@ -1,6 +1,6 @@
 # Run the full calibration and prediction pipeline.
 # The scripts are sourced in dependency order to rebuild training data, model
-# validation, the field habitat map, and the manuscript figures and tables.
+# validation, the field habitat map, and the analysis figures and tables.
 
 # run workflow
 for (script_path in c(

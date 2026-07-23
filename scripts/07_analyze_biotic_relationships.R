@@ -1,7 +1,7 @@
 # Join the 2025 field classes to the godwit and insect datasets.
 # The script summarizes godwit occupancy, occupied-field density, and habitat
 # selection, links insect biomass and carabid richness to field classes, and
-# creates the manuscript biodiversity figures.
+# creates the biodiversity figures.
 
 source("config.R")
 

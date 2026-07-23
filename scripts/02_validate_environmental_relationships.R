@@ -1,6 +1,6 @@
 # Validate how S2REP relates to the measured field variables.
-# The script fits a joint GAM with a field-level random effect, formats the two
-# manuscript GAM tables, and plots adjusted relationships with soil resistance,
+# The script fits a joint GAM with a field-level random effect, formats
+# GAM tables, and plots adjusted relationships with soil resistance,
 # soil moisture, vegetation height, and plant richness.
 
 source("config.R")
@@ -113,7 +113,7 @@ writeLines(
   file.path(paths$validation_dir, "environmental_validation_full_summary_2025.txt")
 )
 
-# manuscript table 1
+# GAM fit table
 model_summary %>%
   transmute(
     `n obs` = n_obs,
@@ -126,7 +126,7 @@ model_summary %>%
   ) %>%
   write_csv(file.path("tables", "table_1_gam_fit_statistics_2025.csv"))
 
-# manuscript table 2
+# GAM terms table
 model_coefficients %>%
   transmute(
     `term type` = term_type,

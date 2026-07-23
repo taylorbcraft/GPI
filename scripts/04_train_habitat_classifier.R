@@ -1,7 +1,7 @@
 # Train pixel-level random forests for each candidate habitat-class target.
 # The script extracts labeled Sentinel-2 pixels, performs forward predictor
 # selection with repeated polygon-grouped cross-validation, refits the selected
-# random forest, and writes model diagnostics plus manuscript Tables 3–5.
+# random forest, and writes model diagnostics and summary tables.
 
 source("config.R")
 source("scripts/shared_raster_helpers.R")
@@ -377,7 +377,7 @@ write_csv(
   path_best_model_metadata()
 )
 
-# manuscript table 3
+# model performance table
 target_summary %>%
   transmute(
     `classification method` = recode(
@@ -391,7 +391,7 @@ target_summary %>%
   ) %>%
   write_csv(file.path("tables", "table_3_random_forest_model_performance_2025.csv"))
 
-# manuscript table 4
+# class accuracy table
 best_final_result$class_accuracy %>%
   mutate(
     class = recode(
@@ -412,7 +412,7 @@ best_final_result$class_accuracy %>%
   ) %>%
   write_csv(file.path("tables", "table_4_random_forest_class_accuracy_2025.csv"))
 
-# manuscript table 5
+# confusion matrix table
 best_final_result$confusion %>%
   transmute(
     reference = recode(
