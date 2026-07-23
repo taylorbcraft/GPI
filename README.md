@@ -1,6 +1,6 @@
 # S2REP grassland habitat quality
 
-This repository contains the R workflow used to classify agricultural grassland habitat quality from April 2025 Sentinel-2 imagery and field measurements in Southwest Friesland. The final classes are `low`, `moderate`, and `high` habitat quality.
+This repository contains the R workflow used to classify agricultural grassland habitat quality from April 2025 Sentinel-2 imagery and field measurements in Southwest Friesland.
 
 ## Run the analysis
 
@@ -10,7 +10,7 @@ Open the project root in R and run:
 source("scripts/run_calibration_and_prediction.R")
 ```
 
-This rebuilds the training data, validates S2REP against field measurements, trains the random forest, creates the field-level habitat map, compares it with Sentinel-1 LUI, and generates the biotic-response figures.
+This rebuilds the training data, validates S2REP against field measurements, trains the random forest, creates the field-level habitat map, compares it with Sentinel-1 LUI, and generates figures.
 
 To apply the saved model without recalibrating it:
 
@@ -18,13 +18,11 @@ To apply the saved model without recalibrating it:
 source("scripts/run_prediction_only.R")
 ```
 
-Set the prediction year, class order, palette, and shared paths in `config.R`. Prediction rasters must follow this naming pattern:
+Set the prediction year and shared paths in `config.R`. Prediction rasters must follow this naming pattern:
 
 ```text
 data/processed/rasters/<index>_<year>-04-median_mosaic.tif
 ```
-
-Pixel predictions are used in memory to assign dominant field classes. A pixel-level habitat map is not saved.
 
 ## Required inputs
 
@@ -45,9 +43,9 @@ The Sentinel-2 predictors are S2REP, NDVI, NDWI, SAVI, EVI, MSI, NDMI, and MNDWI
 | Script | Output |
 | --- | --- |
 | `01_build_anchor_training_data.R` | Polygon-level field and raster training data |
-| `02_validate_environmental_relationships.R` | GAM results, manuscript Tables 1–2, and the environmental validation figure |
+| `02_validate_environmental_relationships.R` | GAM results and the environmental validation figure |
 | `03_define_candidate_habitat_classes.R` | KNN and rule-based candidate habitat classes |
-| `04_train_habitat_classifier.R` | Cross-validated random forest, manuscript Tables 3–5, and the saved model |
+| `04_train_habitat_classifier.R` | Cross-validated random forest and the saved model |
 | `05_predict_habitat_map.R` | Field-level habitat map and map figure |
 | `06_compare_s1_s2_classes.R` | Sentinel-1 comparison results and figure |
 | `07_analyze_biotic_relationships.R` | Godwit and insect figures |
@@ -70,8 +68,6 @@ tables/table_3_random_forest_model_performance_2025.csv
 tables/table_4_random_forest_class_accuracy_2025.csv
 tables/table_5_random_forest_confusion_matrix_2025.csv
 ```
-
-The five files in `tables/` match the table structure, labels, ordering, and rounding used in `S2REP_manuscript.docx`.
 
 ## R packages
 
