@@ -1,7 +1,7 @@
-# Compare Sentinel-1 temporal variability with field-level Sentinel-2 classes.
+# Compare Sentinel-1 temporal variability with field-level Sentinel-2 habitat classes.
 # The script extracts mean Sentinel-1 values to each field polygon, summarizes
-# those values by dominant Sentinel-2 class, runs rank-based tests, and saves
-# table outputs plus a comparison figure.
+# those values by dominant Sentinel-2 habitat class, runs rank-based tests, and saves
+# analysis outputs plus a comparison figure.
 
 source("config.R")
 
@@ -32,33 +32,33 @@ s1_raster_path <- file.path(
 ensure_dirs(c(paths$validation_dir, paths$figure_dir))
 
 # load data
-field_gpi_map <- st_read(path_field_map(), quiet = TRUE) %>%
+field_habitat_map <- st_read(path_field_map(prediction_year), quiet = TRUE) %>%
   mutate(
-    dominant_class = factor(dominant_class, levels = gpi_class_levels),
-    class_rank = match(dominant_class, gpi_class_levels)
+    habitat_class = factor(habitat_class, levels = habitat_class_levels),
+    class_rank = match(habitat_class, habitat_class_levels)
   )
 
 s1_raster <- rast(s1_raster_path)
 
-if (!identical(st_crs(field_gpi_map)$wkt, crs(s1_raster))) {
-  field_gpi_map <- st_transform(field_gpi_map, crs(s1_raster))
+if (!identical(st_crs(field_habitat_map)$wkt, crs(s1_raster))) {
+  field_habitat_map <- st_transform(field_habitat_map, crs(s1_raster))
 }
 
 # extract field means
 field_values <- exact_extract(
   s1_raster,
-  field_gpi_map,
+  field_habitat_map,
   "mean",
   progress = FALSE
 ) %>%
   tibble(s1_temporal_sd = .) %>%
-  bind_cols(field_gpi_map %>% st_drop_geometry() %>% select(field_id, dominant_class, class_rank)) %>%
-  relocate(field_id, dominant_class, class_rank, s1_temporal_sd) %>%
-  filter(!is.na(dominant_class), !is.na(s1_temporal_sd), !is.na(class_rank))
+  bind_cols(field_habitat_map %>% st_drop_geometry() %>% select(field_id, habitat_class, class_rank)) %>%
+  relocate(field_id, habitat_class, class_rank, s1_temporal_sd) %>%
+  filter(!is.na(habitat_class), !is.na(s1_temporal_sd), !is.na(class_rank))
 
 # summarize classes
 class_summary <- field_values %>%
-  group_by(dominant_class, class_rank) %>%
+  group_by(habitat_class, class_rank) %>%
   summarise(
     n_fields = n(),
     mean_s1_temporal_sd = mean(s1_temporal_sd),
@@ -73,10 +73,10 @@ class_summary <- field_values %>%
   select(-class_rank)
 
 # tests
-kruskal_result <- kruskal.test(s1_temporal_sd ~ dominant_class, data = field_values)
+kruskal_result <- kruskal.test(s1_temporal_sd ~ habitat_class, data = field_values)
 pairwise_result <- pairwise.wilcox.test(
   x = field_values$s1_temporal_sd,
-  g = field_values$dominant_class,
+  g = field_values$habitat_class,
   p.adjust.method = "holm"
 )
 spearman_result <- cor.test(
@@ -125,14 +125,23 @@ test_summary <- bind_rows(
   )
 )
 
-# write tables and stats
-write_csv(field_values, path_s1_s2_field_values(s1_polarization, s1_year))
-write_csv(class_summary, path_s1_s2_class_comparison_summary(s1_polarization, s1_year))
-write_csv(test_summary, path_s1_s2_class_comparison_tests(s1_polarization, s1_year))
+# save analysis outputs
+write_csv(
+  field_values,
+  file.path(paths$validation_dir, paste0("s1_s2_field_values_", s1_polarization, "_", s1_year, ".csv"))
+)
+write_csv(
+  class_summary,
+  file.path(paths$validation_dir, paste0("s1_s2_class_comparison_summary_", s1_polarization, "_", s1_year, ".csv"))
+)
+write_csv(
+  test_summary,
+  file.path(paths$validation_dir, paste0("s1_s2_class_comparison_tests_", s1_polarization, "_", s1_year, ".csv"))
+)
 
 stats_lines <- c(
   paste("Sentinel-1 raster:", s1_raster_path),
-  paste("Field map:", path_field_map()),
+  paste("Field map:", path_field_map(prediction_year)),
   paste("Fields compared:", nrow(field_values)),
   "",
   "Kruskal-Wallis test",
@@ -151,37 +160,46 @@ stats_lines <- c(
 
 write_lines(
   stats_lines,
-  path_s1_s2_class_comparison_stats(s1_polarization, s1_year)
+  file.path(paths$validation_dir, paste0("s1_s2_class_comparison_stats_", s1_polarization, "_", s1_year, ".txt"))
 )
 
 # save comparison plot
 comparison_plot <- ggplot(
   field_values,
-  aes(x = dominant_class, y = s1_temporal_sd, fill = dominant_class)
-) +
-  geom_boxplot(width = 0.65, outlier.shape = NA, alpha = 0.85) +
-  geom_jitter(width = 0.18, height = 0, size = 0.6, alpha = 0.2, color = "black") +
+  aes(x = habitat_class, y = s1_temporal_sd, fill = habitat_class)) +
+  coord_cartesian(ylim = c(0.1, 0.25)) +
+  geom_boxplot(
+    width = 0.65,
+    outlier.shape = NA,
+    alpha = 0.85,
+    staplewidth = 0.5,
+    linewidth = 0.8
+  ) +
   scale_fill_manual(
-    values = c(extensive = "#2E7D32", mid = "#FDAE61", intensive = "#D73027"),
-    breaks = gpi_class_levels,
+    values = habitat_class_palette,
+    breaks = habitat_class_levels,
     drop = FALSE
   ) +
   labs(
-    x = "Sentinel-2 habitat quality class",
+    x = "Habitat quality",
     y = "Sentinel-1 LUI",
-    fill = "Class"
+    fill = "Habitat quality"
   ) +
-  theme_minimal(base_size = 12) +
+  theme_minimal(base_family = "Avenir Next", base_size = 12) +
   theme(
+    text = element_text(face = "bold"),
     legend.position = "none",
-    panel.grid.minor = element_blank()
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_line(color = "grey88", linewidth = 0.4),
+    axis.text = element_text(color = "grey35"),
+    axis.title = element_text(color = "grey20")
   )
 
-comparison_plot
-
 ggsave(
-  filename = path_s1_s2_class_comparison_plot(s1_polarization, s1_year),
+  filename = file.path(paths$figure_dir, paste0("s1_s2_class_comparison_", s1_polarization, "_", s1_year, ".png")),
   plot = comparison_plot,
+  device = ragg::agg_png,
   width = 7,
   height = 5,
   dpi = 300

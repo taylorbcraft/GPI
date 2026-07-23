@@ -1,0 +1,10 @@
+target,Prediction,Reference,Freq
+habitat_class_knn_all_field,high,high,7321
+habitat_class_knn_all_field,moderate,high,794
+habitat_class_knn_all_field,low,high,65
+habitat_class_knn_all_field,high,moderate,1055
+habitat_class_knn_all_field,moderate,moderate,3420
+habitat_class_knn_all_field,low,moderate,605
+habitat_class_knn_all_field,high,low,7
+habitat_class_knn_all_field,moderate,low,260
+habitat_class_knn_all_field,low,low,3833

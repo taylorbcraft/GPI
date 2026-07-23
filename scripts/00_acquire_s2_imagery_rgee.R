@@ -1,3 +1,8 @@
+# Acquire Sentinel-2 predictor rasters with rgee.
+# The script masks clouds, calculates S2REP and seven additional spectral indices,
+# builds either a monthly median or filled single-day composite, applies optional
+# spatial smoothing, and exports aligned GeoTIFF rasters.
+
 library(tidyverse)
 library(sf)
 library(terra)
@@ -5,32 +10,15 @@ library(rgee)
 library(lubridate)
 library(googledrive)
 
-# Acquire the project Sentinel-2 predictor rasters with rgee.
 source("config.R")
 
 # settings
 composite_mode <- Sys.getenv("S2_COMPOSITE_MODE", unset = "monthly_median")
-target_date <- Sys.getenv("S2_TARGET_DATE", unset = calibration_image_date)
+target_date <- Sys.getenv("S2_TARGET_DATE", unset = "2025-04-median")
 fill_date <- Sys.getenv("S2_FILL_DATE", unset = "2025-04-06")
-apply_smoothing <- Sys.getenv("S2_APPLY_SMOOTHING", unset = "true")
+apply_smoothing <- Sys.getenv("S2_APPLY_SMOOTHING", unset = "true") == "true"
 smoothing_radius <- as.integer(Sys.getenv("S2_SMOOTHING_RADIUS", unset = "3"))
-mask_shadows <- Sys.getenv("S2_MASK_SHADOWS", unset = "false")
-
-if (!composite_mode %in% c("monthly_median", "single_day")) {
-  stop("S2_COMPOSITE_MODE must be 'monthly_median' or 'single_day'.")
-}
-
-if (!apply_smoothing %in% c("true", "false")) {
-  stop("S2_APPLY_SMOOTHING must be 'true' or 'false'.")
-}
-
-if (!mask_shadows %in% c("true", "false")) {
-  stop("S2_MASK_SHADOWS must be 'true' or 'false'.")
-}
-
-if (is.na(smoothing_radius) || smoothing_radius < 0) {
-  stop("S2_SMOOTHING_RADIUS must be a non-negative integer.")
-}
+mask_shadows <- Sys.getenv("S2_MASK_SHADOWS", unset = "false") == "true"
 
 target_month <- as.Date(if (grepl("-median$", target_date)) {
   sub("-median$", "-01", target_date)
@@ -48,9 +36,8 @@ export_label <- if (composite_mode == "monthly_median") {
 cloud_threshold <- 65
 export_scale <- 20
 drive_folder <- "GEE"
-study_area_source <- paths$field_geometry
 output_dir <- file.path("scratch", "s2_rgee_imagery_test", "outputs", "data")
-export_bands <- c("s2rep", "msi")
+export_bands <- candidate_model_predictor_bands
 
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -62,18 +49,8 @@ if (interactive() && !drive_has_token()) {
   drive_auth()
 }
 
-if (!drive_has_token()) {
-  stop(
-    paste(
-      "Google Drive auth is not available in this session.",
-      "Run this script from an interactive R session after authenticating Drive,",
-      "or call googledrive::drive_auth() first."
-    )
-  )
-}
-
 # study area
-study_area <- st_read(study_area_source, quiet = TRUE) %>%
+study_area <- st_read(paths$field_geometry, quiet = TRUE) %>%
   st_make_valid() %>%
   st_transform(4326)
 
@@ -119,7 +96,7 @@ mask_clouds <- ee_utils_pyfunc(function(img) {
   cloud_mask <- cloud_prob$lt(cloud_threshold)
   combined_mask <- cloud_mask
 
-  if (mask_shadows == "true") {
+  if (mask_shadows) {
     shadow_mask <- img$select("SCL")$neq(3L)
     combined_mask <- cloud_mask$And(shadow_mask)
   }
@@ -181,6 +158,7 @@ processed <- joined_collection$
   map(mask_clouds)$
   map(add_indices)
 
+# daily mosaic helper
 make_daily_mosaic <- function(date_string) {
   processed$
     filterDate(date_string, as.character(as.Date(date_string) + 1))$
@@ -190,12 +168,13 @@ make_daily_mosaic <- function(date_string) {
 
 metadata_path <- file.path(output_dir, paste0("target_image_metadata_", export_label, ".csv"))
 
+# build composite
 if (composite_mode == "monthly_median") {
   export_image <- processed$
     median()$
     clip(study_area_ee)
 
-  if (apply_smoothing == "true") {
+  if (apply_smoothing) {
     export_image <- export_image$
       focal_mean(
         radius = smoothing_radius,
@@ -232,6 +211,7 @@ if (composite_mode == "monthly_median") {
   message("Smoothing radius: ", smoothing_radius)
   message("Shadow masking: ", mask_shadows)
 } else {
+  # target and fill collections
   primary_collection <- processed$
     filterDate(target_date, as.character(as.Date(target_date) + 1))
 
@@ -249,6 +229,7 @@ if (composite_mode == "monthly_median") {
     stop("No Sentinel-2 image found for fill_date within the study area.")
   }
 
+  # fill cloud gaps
   primary_image <- make_daily_mosaic(target_date)
   fill_image <- make_daily_mosaic(fill_date)
 
@@ -256,7 +237,7 @@ if (composite_mode == "monthly_median") {
     unmask(fill_image)$
     clip(study_area_ee)
 
-  if (apply_smoothing == "true") {
+  if (apply_smoothing) {
     export_image <- export_image$
       focal_mean(
         radius = smoothing_radius,
@@ -266,6 +247,7 @@ if (composite_mode == "monthly_median") {
       clip(study_area_ee)
   }
 
+  # source image identifiers
   primary_id <- tryCatch(
     ee$String(primary_collection$sort("CLOUDY_PIXEL_PERCENTAGE")$first()$get("system:index"))$getInfo(),
     error = function(e) NULL
@@ -304,6 +286,7 @@ if (composite_mode == "monthly_median") {
   message("Shadow masking: ", mask_shadows)
 }
 
+# export summary
 message("Drive folder: ", drive_folder)
 message("Export bands: ", paste(export_bands, collapse = ", "))
 

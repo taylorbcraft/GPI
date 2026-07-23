@@ -1,5 +1,7 @@
 # Build the polygon-level anchor training table.
-# Join field measurements, plant richness, and raster summaries for sampled polygons.
+# The script standardizes observer labels, aggregates soil and vegetation surveys,
+# extracts April Sentinel-2 predictor means for each sampled polygon, and joins
+# those inputs into the calibration dataset.
 
 source("config.R")
 
@@ -9,28 +11,37 @@ library(terra)
 library(exactextractr)
 library(janitor)
 
-normalize_gpi_label <- function(x) {
+normalize_habitat_class_label <- function(x) {
   x %>%
     stringr::str_trim() %>%
     stringr::str_to_lower() %>%
     stringr::str_replace_all("[- ]+", "_") %>%
-    stringr::str_replace("^mid_low$", "extensive") %>%
-    stringr::str_replace("^mid_high$", "mid")
+    stringr::str_replace("^mid_low$", "high") %>%
+    stringr::str_replace("^mid_high$", "moderate") %>%
+    stringr::str_replace("^extensive$", "high") %>%
+    stringr::str_replace("^mid$", "moderate") %>%
+    stringr::str_replace("^intensive$", "low")
 }
 
 ensure_dirs(paths$training_dir)
 
 # clean observer labels
-env <- read_csv(paths$raw_env, show_col_types = FALSE) %>%
+env <- read_csv(
+  file.path("data", "raw", "environmental_field_data_2025.csv"),
+  show_col_types = FALSE
+) %>%
   clean_names() %>%
-  rename(observer_estimated_GPI = in_lui) %>%
+  rename(observer_estimated_class = in_lui) %>%
   mutate(
     polygon_id = as.character(polygon_id),
-    observer_estimated_GPI = normalize_gpi_label(observer_estimated_GPI),
-    observer_estimated_GPI = factor(observer_estimated_GPI, levels = gpi_class_levels)
+    observer_estimated_class = normalize_habitat_class_label(observer_estimated_class),
+    observer_estimated_class = factor(observer_estimated_class, levels = habitat_class_levels)
   )
 
-plant_div <- read_csv(paths$raw_plant, show_col_types = FALSE) %>%
+plant_div <- read_csv(
+  file.path("data", "raw", "plant_diversity_plots_2025.csv"),
+  show_col_types = FALSE
+) %>%
   clean_names()
 
 # sampled zone geometry
@@ -42,9 +53,9 @@ zones <- st_read(paths$sampled_zone_geometry, quiet = TRUE) %>%
   )
 
 # calibration raster layers
-predictor_rasters <- predictor_bands %>%
+predictor_rasters <- candidate_model_predictor_bands %>%
   set_names() %>%
-  map(~ rast(path_calibration_raster(.x)))
+  map(~ rast(path_raster(.x, "2025-04-median")))
 
 if ("s2rep" %in% names(predictor_rasters)) {
   predictor_rasters$s2rep <- clamp(predictor_rasters$s2rep, lower = 600, upper = 850, values = TRUE)
@@ -56,13 +67,13 @@ zones <- st_transform(zones, crs(predictor_rasters[[1]]))
 env_summary <- env %>%
   group_by(polygon_id) %>%
   summarise(
-    observer_estimated_GPI = dplyr::first(na.omit(as.character(observer_estimated_GPI)), default = NA_character_),
+    observer_estimated_class = dplyr::first(na.omit(as.character(observer_estimated_class)), default = NA_character_),
     soil_moisture = mean(sm_mean, na.rm = TRUE),
     soil_resistance = mean(resistance_mean, na.rm = TRUE),
     vegetation_height = mean(vh_mean, na.rm = TRUE),
     .groups = "drop"
   ) %>%
-  mutate(observer_estimated_GPI = factor(observer_estimated_GPI, levels = gpi_class_levels))
+  mutate(observer_estimated_class = factor(observer_estimated_class, levels = habitat_class_levels))
 
 plant_summary <- plant_div %>%
   group_by(polygon_id) %>%
@@ -84,4 +95,5 @@ anchor_zone_training_data <- zones %>%
   left_join(env_summary, by = "polygon_id") %>%
   left_join(plant_summary, by = "polygon_id")
 
+# save training data
 write_csv(anchor_zone_training_data, path_anchor_training())

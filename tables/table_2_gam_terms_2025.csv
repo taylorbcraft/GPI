@@ -1,0 +1,7 @@
+term type,term,estimate,statistic,p value,edf,ref. df
+parametric,(Intercept),721.231,4.788e+03,< 0.001,,
+smooth,s(soil_resistance),,24.324,< 0.001,2.589,9
+smooth,s(soil_moisture),,2.576,0.012,1.281,9
+smooth,s(vegetation_height),,135.632,< 0.001,2.319,9
+smooth,s(plant_richness_mean),,1.546e-04,0.323,0.001,9
+smooth,s(field_id),,2.641,< 0.001,29.104,41

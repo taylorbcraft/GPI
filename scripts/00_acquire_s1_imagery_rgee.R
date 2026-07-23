@@ -12,7 +12,7 @@ library(googledrive)
 source("config.R")
 
 # settings
-s1_year <- Sys.getenv("S1_YEAR", unset = calibration_year)
+s1_year <- Sys.getenv("S1_YEAR", unset = "2025")
 start_date <- Sys.getenv("S1_START_DATE", unset = paste0(s1_year, "-03-31"))
 end_date <- Sys.getenv("S1_END_DATE", unset = paste0(s1_year, "-07-17"))
 orbit_pass <- Sys.getenv("S1_ORBIT_PASS", unset = "ASCENDING")
@@ -21,25 +21,7 @@ polarization <- Sys.getenv("S1_POLARIZATION", unset = "VV")
 instrument_mode <- Sys.getenv("S1_INSTRUMENT_MODE", unset = "IW")
 boxcar_radius <- as.integer(Sys.getenv("S1_BOXCAR_RADIUS", unset = "3"))
 export_scale <- as.integer(Sys.getenv("S1_EXPORT_SCALE", unset = "10"))
-drive_folder <- "GEE"
-study_area_source <- paths$field_geometry
 output_dir <- file.path("scratch", "s1_rgee_imagery_test", "outputs", "data")
-output_path <- file.path(
-  paths$raster_dir,
-  paste0(
-    "S1_",
-    polarization,
-    "_LogRatio_StdDev_",
-    str_to_title(str_to_lower(orbit_pass)),
-    "_",
-    s1_year,
-    ".tif"
-  )
-)
-metadata_path <- file.path(
-  output_dir,
-  paste0("s1_temporal_sd_metadata_", s1_year, ".csv")
-)
 
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -47,7 +29,7 @@ dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 ee_Initialize(drive = TRUE)
 
 # study area
-study_area <- st_read(study_area_source, quiet = TRUE) %>%
+study_area <- st_read(paths$field_geometry, quiet = TRUE) %>%
   st_make_valid() %>%
   st_transform(4326)
 
@@ -140,7 +122,7 @@ tibble(
   boxcar_radius = boxcar_radius,
   export_scale = export_scale
 ) %>%
-  write_csv(metadata_path)
+  write_csv(file.path(output_dir, paste0("s1_temporal_sd_metadata_", s1_year, ".csv")))
 
 message("Images used: ", image_count)
 message("Consecutive log ratios: ", log_ratio_count)
@@ -158,7 +140,7 @@ ee_as_rast(
   image = temporal_sd,
   dsn = download_path,
   via = "drive",
-  container = drive_folder,
+  container = "GEE",
   scale = export_scale,
   maxPixels = 1e13,
   timePrefix = FALSE,
@@ -166,7 +148,7 @@ ee_as_rast(
 )
 
 # align to Sentinel-2 template grid
-template_path <- path_calibration_raster("s2rep")
+template_path <- path_raster("s2rep", "2025-04-median")
 template_raster <- rast(template_path)
 downloaded_raster <- rast(download_path)
 
@@ -174,5 +156,20 @@ if (!compareGeom(template_raster, downloaded_raster, stopOnError = FALSE)) {
   downloaded_raster <- project(downloaded_raster, template_raster, method = "bilinear")
 }
 
-writeRaster(downloaded_raster, output_path, overwrite = TRUE)
+writeRaster(
+  downloaded_raster,
+  file.path(
+    paths$raster_dir,
+    paste0(
+      "S1_",
+      polarization,
+      "_LogRatio_StdDev_",
+      str_to_title(str_to_lower(orbit_pass)),
+      "_",
+      s1_year,
+      ".tif"
+    )
+  ),
+  overwrite = TRUE
+)
 unlink(download_path)

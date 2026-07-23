@@ -1,3 +1,0 @@
-target,predictors,predictor,mean_decrease_accuracy
-gpi_class_knn_all_field,"s2rep, msi",s2rep,199.1278209936867
-gpi_class_knn_all_field,"s2rep, msi",msi,140.74243532572015

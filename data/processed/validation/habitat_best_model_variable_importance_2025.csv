@@ -1,0 +1,3 @@
+target,predictors,predictor,mean_decrease_accuracy
+habitat_class_knn_all_field,"s2rep, msi",s2rep,199.1278209936867
+habitat_class_knn_all_field,"s2rep, msi",msi,140.74243532572015

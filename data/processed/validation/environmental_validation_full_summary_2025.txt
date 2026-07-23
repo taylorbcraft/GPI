@@ -3,9 +3,10 @@ Unique meadows: 42
 
 Model summary
 # A tibble: 1 × 10
-  model description                  n_obs n_meadows   aic   bic  rmse r_squared adj_r_squared dev_explained
-  <chr> <chr>                        <int>     <int> <dbl> <dbl> <dbl>     <dbl>         <dbl>         <dbl>
-1 gam   Joint GAM with meadow rando…    83        42  194.  292. 0.477     0.939         0.939         0.965
+  model description    n_obs n_meadows   aic   bic  rmse r_squared adj_r_squared
+  <chr> <chr>          <int>     <int> <dbl> <dbl> <dbl>     <dbl>         <dbl>
+1 gam   Joint GAM wit…    83        42  194.  292. 0.477     0.939         0.939
+# ℹ 1 more variable: dev_explained <dbl>
 
 Joint generalized additive model with meadow random effect
 

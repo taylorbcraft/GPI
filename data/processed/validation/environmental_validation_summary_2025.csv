@@ -1,2 +1,0 @@
-model,description,n_obs,n_meadows,aic,bic,rmse,r_squared,adj_r_squared,dev_explained
-gam,Joint GAM with meadow random effect,83,42,193.8618155756198,291.87735964290573,0.4774434398931669,0.9387290373256894,0.9387290373256894,0.965101587795692

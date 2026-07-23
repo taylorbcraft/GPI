@@ -1,0 +1,31 @@
+classification method,predictors,OA,KC
+gpi_class_knn_all_field,s2rep,0.772,0.641
+gpi_class_knn_all_field,ndvi,0.657,0.462
+gpi_class_knn_all_field,ndwi,0.658,0.462
+gpi_class_knn_all_field,savi,0.583,0.348
+gpi_class_knn_all_field,evi,0.583,0.347
+gpi_class_knn_all_field,msi,0.666,0.480
+gpi_class_knn_all_field,ndmi,0.615,0.394
+gpi_class_knn_all_field,mndwi,0.471,0.170
+gpi_class_knn_all_field,"s2rep, ndvi",0.794,0.675
+gpi_class_knn_all_field,"s2rep, ndwi",0.788,0.666
+gpi_class_knn_all_field,"s2rep, savi",0.816,0.711
+gpi_class_knn_all_field,"s2rep, evi",0.802,0.688
+gpi_class_knn_all_field,"s2rep, msi",0.839,0.746
+gpi_class_knn_all_field,"s2rep, ndmi",0.799,0.684
+gpi_class_knn_all_field,"s2rep, mndwi",0.795,0.677
+gpi_class_rbc_soil_richness,s2rep,0.452,0.172
+gpi_class_rbc_soil_richness,ndvi,0.450,0.171
+gpi_class_rbc_soil_richness,ndwi,0.486,0.226
+gpi_class_rbc_soil_richness,savi,0.452,0.171
+gpi_class_rbc_soil_richness,evi,0.471,0.202
+gpi_class_rbc_soil_richness,msi,0.436,0.148
+gpi_class_rbc_soil_richness,ndmi,0.436,0.147
+gpi_class_rbc_soil_richness,mndwi,0.451,0.168
+gpi_class_rbc_soil_richness,"ndwi, s2rep",0.491,0.230
+gpi_class_rbc_soil_richness,"ndwi, ndvi",0.504,0.249
+gpi_class_rbc_soil_richness,"ndwi, savi",0.476,0.207
+gpi_class_rbc_soil_richness,"ndwi, evi",0.477,0.209
+gpi_class_rbc_soil_richness,"ndwi, msi",0.490,0.230
+gpi_class_rbc_soil_richness,"ndwi, ndmi",0.526,0.281
+gpi_class_rbc_soil_richness,"ndwi, mndwi",0.531,0.290

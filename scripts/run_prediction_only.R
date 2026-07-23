@@ -1,11 +1,6 @@
 # Run the prediction-only pipeline.
-# This rebuilds the prediction stack and applies the saved model to current rasters.
+# The script applies the saved model to the configured prediction-year rasters
+# and rebuilds the field-level habitat map and map figure.
 
-scripts_to_run <- c(
-  "scripts/05_predict_pixel_map.R"
-)
-
-for (script_path in scripts_to_run) {
-  message("running ", script_path)
-  source(script_path)
-}
+# run prediction
+source("scripts/05_predict_habitat_map.R")

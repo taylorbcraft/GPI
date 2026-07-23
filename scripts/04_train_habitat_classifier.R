@@ -1,7 +1,10 @@
-# Train pixel-level random forests for each candidate target.
-# Compare grouped cross-validation performance and save the best model outputs.
+# Train pixel-level random forests for each candidate habitat-class target.
+# The script extracts labeled Sentinel-2 pixels, performs forward predictor
+# selection with repeated polygon-grouped cross-validation, refits the selected
+# random forest, and writes model diagnostics plus manuscript Tables 3–5.
 
 source("config.R")
+source("scripts/shared_raster_helpers.R")
 
 library(tidyverse)
 library(caret)
@@ -10,23 +13,13 @@ library(sf)
 library(terra)
 library(janitor)
 
+# model settings
 rf_ntree <- 1000
 rf_ntree_selection <- 250
 rf_mtry <- 1
 cv_folds <- 5
 cv_repeats <- 20
-
-if (!model_training_unit %in% c("pixel", "field")) {
-  stop("model_training_unit must be 'pixel' or 'field'.")
-}
-
-if (length(candidate_model_predictor_bands) == 0) {
-  stop("candidate_model_predictor_bands must contain at least one band.")
-}
-
-if (is.na(max_model_predictors) || max_model_predictors < 1) {
-  stop("max_model_predictors must be at least 1.")
-}
+model_class_levels <- rev(habitat_class_levels)
 
 # polygon-grouped folds
 make_grouped_folds <- function(groups, labels, k, seed) {
@@ -60,37 +53,6 @@ make_grouped_folds <- function(groups, labels, k, seed) {
   map(fold_groups, ~ which(as.character(groups) %in% .x))
 }
 
-# repeated stratified folds
-make_stratified_folds <- function(labels, k, seed) {
-  set.seed(seed)
-
-  row_tbl <- tibble(
-    row_id = seq_along(labels),
-    label = as.character(labels)
-  ) %>%
-    arrange(label, row_id)
-
-  fold_rows <- vector("list", k)
-
-  for (label in unique(row_tbl$label)) {
-    label_rows <- row_tbl %>%
-      filter(label == !!label) %>%
-      pull(row_id)
-
-    label_rows <- sample(label_rows)
-    assignments <- rep(seq_len(k), length.out = length(label_rows))
-
-    for (fold_id in seq_len(k)) {
-      fold_rows[[fold_id]] <- c(
-        fold_rows[[fold_id]],
-        label_rows[assignments == fold_id]
-      )
-    }
-  }
-
-  fold_rows
-}
-
 # repeated grouped cv
 predict_repeated_cv_pixel <- function(data, predictors, seed = 456, cv_ntree = rf_ntree_selection) {
   model_mtry <- min(rf_mtry, length(predictors))
@@ -99,7 +61,7 @@ predict_repeated_cv_pixel <- function(data, predictors, seed = 456, cv_ntree = r
     seq_len(cv_repeats),
     ~ make_grouped_folds(
       groups = data$polygon_id,
-      labels = data$gpi_class,
+      labels = data$habitat_class,
       k = cv_folds,
       seed = seed + .x - 1
     )
@@ -120,7 +82,7 @@ predict_repeated_cv_pixel <- function(data, predictors, seed = 456, cv_ntree = r
 
           rf_mod <- randomForest(
             x = train_fold %>% select(all_of(predictors)),
-            y = train_fold$gpi_class,
+            y = train_fold$habitat_class,
             mtry = model_mtry,
             ntree = cv_ntree,
             importance = FALSE
@@ -131,53 +93,7 @@ predict_repeated_cv_pixel <- function(data, predictors, seed = 456, cv_ntree = r
             cell_id = test_fold$cell_id,
             polygon_id = test_fold$polygon_id,
             meadow_id = test_fold$meadow_id,
-            reference = test_fold$gpi_class,
-            prediction = predict(rf_mod, newdata = test_fold %>% select(all_of(predictors)))
-          )
-        }
-      )
-    ) %>%
-    unnest(predictions)
-}
-
-predict_repeated_cv_field <- function(data, predictors, seed = 456, cv_ntree = rf_ntree_selection) {
-  model_mtry <- min(rf_mtry, length(predictors))
-
-  resamples <- map(
-    seq_len(cv_repeats),
-    ~ make_stratified_folds(
-      labels = data$gpi_class,
-      k = cv_folds,
-      seed = seed + .x - 1
-    )
-  )
-
-  crossing(
-    repeat_id = seq_len(cv_repeats),
-    fold_id = seq_len(cv_folds)
-  ) %>%
-    mutate(
-      predictions = map2(
-        repeat_id,
-        fold_id,
-        function(repeat_id, fold_id) {
-          test_index <- resamples[[repeat_id]][[fold_id]]
-          train_fold <- data[-test_index, ]
-          test_fold <- data[test_index, ]
-
-          rf_mod <- randomForest(
-            x = train_fold %>% select(all_of(predictors)),
-            y = train_fold$gpi_class,
-            mtry = model_mtry,
-            ntree = cv_ntree,
-            importance = FALSE
-          )
-
-          tibble(
-            row_id = test_index,
-            polygon_id = test_fold$polygon_id,
-            meadow_id = test_fold$meadow_id,
-            reference = test_fold$gpi_class,
+            reference = test_fold$habitat_class,
             prediction = predict(rf_mod, newdata = test_fold %>% select(all_of(predictors)))
           )
         }
@@ -189,8 +105,8 @@ predict_repeated_cv_field <- function(data, predictors, seed = 456, cv_ntree = r
 # confusion-matrix outputs
 summarise_confusion <- function(pred, ref, target_var) {
   cm <- confusionMatrix(
-    data = factor(pred, levels = gpi_class_levels),
-    reference = factor(ref, levels = gpi_class_levels)
+    data = factor(pred, levels = model_class_levels),
+    reference = factor(ref, levels = model_class_levels)
   )
 
   list(
@@ -220,72 +136,30 @@ summarise_confusion <- function(pred, ref, target_var) {
   )
 }
 
-# choose best candidate
-choose_best_result <- function(results) {
-  summary_tbl <- map_dfr(results, "summary") %>%
-    mutate(result_row = row_number())
-
-  best_row <- summary_tbl %>%
-    arrange(
-      desc(kappa),
-      desc(overall_accuracy),
-      n_predictors,
-      predictors,
-      target
-    ) %>%
-    slice(1) %>%
-    pull(result_row)
-
-  results[[best_row]]
-}
-
 # fit one target-predictor candidate
 fit_target_model <- function(target_var, training_source, predictors, selection_stage,
                              cv_ntree = rf_ntree_selection, final_ntree = rf_ntree) {
   model_mtry <- min(rf_mtry, length(predictors))
   predictor_string <- paste(predictors, collapse = ", ")
-  predictor_count <- length(predictors)
 
-  if (model_training_unit == "pixel") {
-    training_data <- training_source %>%
-      transmute(
-        cell_id,
-        x,
-        y,
-        polygon_id,
-        meadow_id,
-        gpi_class = factor(.data[[target_var]], levels = gpi_class_levels),
-        across(all_of(predictors))
-      ) %>%
-      drop_na(gpi_class, all_of(predictors))
+  training_data <- training_source %>%
+    transmute(
+      cell_id,
+      x,
+      y,
+      polygon_id,
+      meadow_id,
+      habitat_class = factor(.data[[target_var]], levels = model_class_levels),
+      across(all_of(predictors))
+    ) %>%
+    drop_na(habitat_class, all_of(predictors))
 
-    repeated_cv_predictions <- predict_repeated_cv_pixel(
-      data = training_data,
-      predictors = predictors,
-      seed = 124,
-      cv_ntree = cv_ntree
-    )
-
-    validation_group <- "polygon_id"
-  } else {
-    training_data <- training_source %>%
-      transmute(
-        polygon_id = as.character(polygon_id),
-        meadow_id = as.character(meadow_id),
-        gpi_class = factor(.data[[target_var]], levels = gpi_class_levels),
-        across(all_of(predictors))
-      ) %>%
-      drop_na(gpi_class, all_of(predictors))
-
-    repeated_cv_predictions <- predict_repeated_cv_field(
-      data = training_data,
-      predictors = predictors,
-      seed = 124,
-      cv_ntree = cv_ntree
-    )
-
-    validation_group <- "stratified_polygon_rows"
-  }
+  repeated_cv_predictions <- predict_repeated_cv_pixel(
+    data = training_data,
+    predictors = predictors,
+    seed = 124,
+    cv_ntree = cv_ntree
+  )
 
   repeated_cv_eval <- summarise_confusion(
     pred = repeated_cv_predictions$prediction,
@@ -295,7 +169,7 @@ fit_target_model <- function(target_var, training_source, predictors, selection_
 
   fitted_model <- randomForest(
     x = training_data %>% select(all_of(predictors)),
-    y = training_data$gpi_class,
+    y = training_data$habitat_class,
     mtry = model_mtry,
     ntree = final_ntree,
     importance = TRUE
@@ -305,9 +179,9 @@ fit_target_model <- function(target_var, training_source, predictors, selection_
     target = target_var,
     selection_stage = selection_stage,
     predictors = predictor_string,
-    n_predictors = predictor_count,
-    training_unit = model_training_unit,
-    validation_group = validation_group,
+    n_predictors = str_count(predictor_string, fixed(",")) + 1,
+    training_unit = "pixel",
+    validation_group = "polygon_id",
     n_training_rows = nrow(training_data),
     n_training_polygons = n_distinct(training_data$polygon_id),
     selected_mtry = model_mtry,
@@ -347,7 +221,7 @@ fit_target_model <- function(target_var, training_source, predictors, selection_
 run_forward_selection <- function(target_var, training_source) {
   results <- list()
   selected_predictors <- character()
-  max_steps <- min(max_model_predictors, length(candidate_model_predictor_bands))
+  max_steps <- min(2, length(candidate_model_predictor_bands))
 
   for (selection_stage in seq_len(max_steps)) {
     if (selection_stage == 1) {
@@ -373,84 +247,95 @@ run_forward_selection <- function(target_var, training_source) {
     )
 
     results <- c(results, step_results)
-    selected_predictors <- choose_best_result(step_results)$predictors
+    best_step <- map_dfr(step_results, "summary") %>%
+      mutate(result_row = row_number()) %>%
+      arrange(
+        desc(kappa),
+        desc(overall_accuracy),
+        n_predictors,
+        predictors,
+        target
+      ) %>%
+      slice(1)
+
+    selected_predictors <- step_results[[best_step$result_row]]$predictors
   }
 
   results
 }
 
 ensure_dirs(c(paths$validation_dir, paths$model_dir))
+ensure_dirs("tables")
 
-# candidate target labels
+# load candidate labels
 zone_labels <- read_csv(path_candidate_training(), show_col_types = FALSE)
-target_vars <- names(zone_labels) %>% str_subset("^gpi_class_")
+target_vars <- names(zone_labels) %>% str_subset("^habitat_class_")
 zone_labels <- zone_labels %>%
   mutate(
     polygon_id = as.character(polygon_id),
     meadow_id = as.character(meadow_id),
-    across(all_of(target_vars), ~ factor(.x, levels = gpi_class_levels))
+    across(all_of(target_vars), ~ factor(.x, levels = model_class_levels))
   )
 
-if (model_training_unit == "pixel") {
-  zones <- st_read(paths$sampled_zone_geometry, quiet = TRUE) %>%
-    clean_names() %>%
-    mutate(
-      polygon_id = as.character(polygon_id),
-      meadow_id = str_remove(polygon_id, "_.*$")
-    )
-
-  predictor_stack <- load_predictor_stack(
-    band_names = candidate_model_predictor_bands,
-    image_date = calibration_image_date
+# extract labeled pixels
+zones <- st_read(paths$sampled_zone_geometry, quiet = TRUE) %>%
+  clean_names() %>%
+  mutate(
+    polygon_id = as.character(polygon_id),
+    meadow_id = str_remove(polygon_id, "_.*$")
   )
-  zones <- st_transform(zones, crs(predictor_stack))
 
-  labeled_zones <- zones %>%
-    left_join(
-      zone_labels %>%
-        select(polygon_id, meadow_id, all_of(target_vars)),
-      by = c("polygon_id", "meadow_id")
-    )
+predictor_stack <- load_predictor_stack(
+  band_names = candidate_model_predictor_bands,
+  image_date = "2025-04-median"
+)
+zones <- st_transform(zones, crs(predictor_stack))
 
-  training_source <- terra::extract(
-    x = predictor_stack,
-    y = vect(labeled_zones),
-    cells = TRUE,
-    xy = TRUE
+labeled_zones <- zones %>%
+  left_join(
+    zone_labels %>%
+      select(polygon_id, meadow_id, all_of(target_vars)),
+    by = c("polygon_id", "meadow_id")
+  )
+
+training_source <- terra::extract(
+  x = predictor_stack,
+  y = vect(labeled_zones),
+  cells = TRUE,
+  xy = TRUE
+) %>%
+  as_tibble() %>%
+  rename(zone_row = ID, cell_id = cell) %>%
+  left_join(
+    st_drop_geometry(labeled_zones) %>%
+      mutate(zone_row = row_number()) %>%
+      select(zone_row, polygon_id, meadow_id, all_of(target_vars)),
+    by = "zone_row"
   ) %>%
-    as_tibble() %>%
-    rename(zone_row = ID, cell_id = cell) %>%
-    left_join(
-      st_drop_geometry(labeled_zones) %>%
-        mutate(zone_row = row_number()) %>%
-        select(zone_row, polygon_id, meadow_id, all_of(target_vars)),
-      by = "zone_row"
-    ) %>%
-    mutate(
-      polygon_id = as.character(polygon_id),
-      meadow_id = as.character(meadow_id)
-    )
-} else {
-  anchor_training <- read_csv(path_anchor_training(), show_col_types = FALSE) %>%
-    mutate(
-      polygon_id = as.character(polygon_id),
-      meadow_id = as.character(meadow_id)
-    )
+  mutate(
+    polygon_id = as.character(polygon_id),
+    meadow_id = as.character(meadow_id)
+  )
 
-  training_source <- zone_labels %>%
-    left_join(
-      anchor_training %>%
-        select(polygon_id, meadow_id, all_of(candidate_model_predictor_bands)),
-      by = c("polygon_id", "meadow_id")
-    )
-}
-
-# fit all candidate targets and predictor sets
+# compare candidate models
 target_results <- map(target_vars, ~ run_forward_selection(.x, training_source))
 all_results <- flatten(target_results)
 target_summary <- map_dfr(all_results, "summary")
 
-best_result <- choose_best_result(all_results)
+# select best model
+best_result <- all_results[[target_summary %>%
+  mutate(result_row = row_number()) %>%
+  arrange(
+    desc(kappa),
+    desc(overall_accuracy),
+    n_predictors,
+    predictors,
+    target
+  ) %>%
+  slice(1) %>%
+  pull(result_row)]]
+
+# refit selected model
 best_final_result <- fit_target_model(
   target_var = best_result$target,
   training_source = training_source,
@@ -475,11 +360,11 @@ write_csv(
       compared_predictors = compared_predictors,
       .before = 1
     ),
-  path_model_comparison()
+  file.path(paths$validation_dir, "habitat_model_comparison_2025.csv")
 )
-write_csv(best_final_result$confusion, path_best_model_confusion())
-write_csv(best_final_result$class_accuracy, path_best_model_class_accuracy())
-write_csv(best_final_result$importance, path_best_model_variable_importance())
+write_csv(best_final_result$confusion, file.path(paths$validation_dir, "habitat_best_model_confusion_matrix_2025.csv"))
+write_csv(best_final_result$class_accuracy, file.path(paths$validation_dir, "habitat_best_model_class_accuracy_2025.csv"))
+write_csv(best_final_result$importance, file.path(paths$validation_dir, "habitat_best_model_variable_importance_2025.csv"))
 write_csv(
   best_final_result$summary %>%
     mutate(
@@ -491,5 +376,68 @@ write_csv(
     ),
   path_best_model_metadata()
 )
+
+# manuscript table 3
+target_summary %>%
+  transmute(
+    `classification method` = recode(
+      target,
+      habitat_class_knn_all_field = "gpi_class_knn_all_field",
+      habitat_class_rbc_soil_richness = "gpi_class_rbc_soil_richness"
+    ),
+    predictors,
+    OA = formatC(overall_accuracy, format = "f", digits = 3),
+    KC = formatC(kappa, format = "f", digits = 3)
+  ) %>%
+  write_csv(file.path("tables", "table_3_random_forest_model_performance_2025.csv"))
+
+# manuscript table 4
+best_final_result$class_accuracy %>%
+  mutate(
+    class = recode(
+      class,
+      low = "intensive",
+      moderate = "mid",
+      high = "extensive"
+    ),
+    class = factor(class, levels = c("extensive", "mid", "intensive"))
+  ) %>%
+  arrange(class) %>%
+  transmute(
+    class = as.character(class),
+    `producer's accuracy` = formatC(producers_accuracy, format = "f", digits = 3),
+    `user's accuracy` = formatC(users_accuracy, format = "f", digits = 3),
+    specificity = formatC(specificity, format = "f", digits = 3),
+    `balanced accuracy` = formatC(balanced_accuracy, format = "f", digits = 3)
+  ) %>%
+  write_csv(file.path("tables", "table_4_random_forest_class_accuracy_2025.csv"))
+
+# manuscript table 5
+best_final_result$confusion %>%
+  transmute(
+    reference = recode(
+      as.character(Reference),
+      low = "intensive",
+      moderate = "mid",
+      high = "extensive"
+    ),
+    prediction_class = recode(
+      as.character(Prediction),
+      low = "intensive",
+      moderate = "mid",
+      high = "extensive"
+    ),
+    frequency = Freq
+  ) %>%
+  pivot_wider(names_from = prediction_class, values_from = frequency) %>%
+  mutate(reference = factor(reference, levels = c("extensive", "intensive", "mid"))) %>%
+  arrange(reference) %>%
+  transmute(
+    reference = as.character(reference),
+    extensive,
+    intensive,
+    mid
+  ) %>%
+  write_csv(file.path("tables", "table_5_random_forest_confusion_matrix_2025.csv"))
 
 saveRDS(best_final_result$model, path_best_model())
