@@ -12,7 +12,7 @@ source("scripts/run_calibration_and_prediction.R")
 
 This rebuilds the training data, validates S2REP against field measurements, trains the random forest, creates the field-level habitat map, compares it with Sentinel-1 LUI, and generates figures.
 
-To apply the saved model without recalibrating it:
+To apply the saved model to other years and study areas:
 
 ```r
 source("scripts/run_prediction_only.R")
