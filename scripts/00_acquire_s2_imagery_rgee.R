@@ -1,38 +1,25 @@
 # Acquire Sentinel-2 predictor rasters with rgee.
 # The script masks clouds, calculates S2REP and seven additional spectral indices,
-# builds either a monthly median or filled single-day composite, applies optional
-# spatial smoothing, and exports aligned GeoTIFF rasters.
+# builds a monthly median composite, applies optional spatial smoothing, and
+# exports aligned GeoTIFF rasters.
 
 library(tidyverse)
 library(sf)
 library(terra)
 library(rgee)
-library(lubridate)
 library(googledrive)
 
 source("config.R")
 
 # settings
-composite_mode <- Sys.getenv("S2_COMPOSITE_MODE", unset = "monthly_median")
-target_date <- Sys.getenv("S2_TARGET_DATE", unset = "2025-04-median")
-fill_date <- Sys.getenv("S2_FILL_DATE", unset = "2025-04-06")
+composite_month <- Sys.getenv("S2_COMPOSITE_MONTH", unset = "2025-04")
 apply_smoothing <- Sys.getenv("S2_APPLY_SMOOTHING", unset = "true") == "true"
 smoothing_radius <- as.integer(Sys.getenv("S2_SMOOTHING_RADIUS", unset = "3"))
 mask_shadows <- Sys.getenv("S2_MASK_SHADOWS", unset = "false") == "true"
 
-target_month <- as.Date(if (grepl("-median$", target_date)) {
-  sub("-median$", "-01", target_date)
-} else {
-  target_date
-})
-
-start_date <- floor_date(target_month, unit = "month")
-end_date <- ceiling_date(target_month, unit = "month") - days(1)
-export_label <- if (composite_mode == "monthly_median") {
-  paste0(format(start_date, "%Y-%m"), "-median")
-} else {
-  target_date
-}
+start_date <- as.Date(paste0(composite_month, "-01"))
+end_date <- seq(start_date, by = "month", length.out = 2)[2] - 1
+export_label <- paste0(composite_month, "-median")
 cloud_threshold <- 65
 export_scale <- 20
 drive_folder <- "GEE"
@@ -73,11 +60,11 @@ study_area_ee <- ee$Geometry$Rectangle(
 # source collections
 s2 <- ee$ImageCollection("COPERNICUS/S2_SR_HARMONIZED")$
   filterBounds(study_area_ee)$
-  filterDate(as.character(start_date), as.character(end_date + days(1)))
+  filterDate(as.character(start_date), as.character(end_date + 1))
 
 s2_clouds <- ee$ImageCollection("COPERNICUS/S2_CLOUD_PROBABILITY")$
   filterBounds(study_area_ee)$
-  filterDate(as.character(start_date), as.character(end_date + days(1)))
+  filterDate(as.character(start_date), as.character(end_date + 1))
 
 joined <- ee$Join$saveFirst("cloud_mask")$apply(
   primary = s2,
@@ -158,133 +145,49 @@ processed <- joined_collection$
   map(mask_clouds)$
   map(add_indices)
 
-# daily mosaic helper
-make_daily_mosaic <- function(date_string) {
-  processed$
-    filterDate(date_string, as.character(as.Date(date_string) + 1))$
-    sort("CLOUDY_PIXEL_PERCENTAGE")$
-    mosaic()
-}
-
-metadata_path <- file.path(output_dir, paste0("target_image_metadata_", export_label, ".csv"))
+metadata_path <- file.path(output_dir, paste0("s2_composite_metadata_", export_label, ".csv"))
 
 # build composite
-if (composite_mode == "monthly_median") {
-  export_image <- processed$
-    median()$
-    clip(study_area_ee)
+image_count <- processed$size()$getInfo()
 
-  if (apply_smoothing) {
-    export_image <- export_image$
-      focal_mean(
-        radius = smoothing_radius,
-        kernelType = "square",
-        units = "pixels"
-      )$
-      clip(study_area_ee)
-  }
-
-  image_count <- processed$size()$getInfo()
-
-  if (is.null(image_count) || image_count == 0) {
-    stop("No Sentinel-2 images found in the requested monthly window within the study area.")
-  }
-
-  tibble(
-    export_label = export_label,
-    start_date = as.character(start_date),
-    end_date = as.character(end_date),
-    composite_method = "monthly_median",
-    n_images = image_count,
-    smoothing = apply_smoothing,
-    smoothing_radius = smoothing_radius,
-    shadow_masking = mask_shadows,
-    cloud_threshold = cloud_threshold,
-    export_scale = export_scale
-  ) %>%
-    write_csv(metadata_path)
-
-  message("Composite label: ", export_label)
-  message("Composite method: monthly median")
-  message("Images used: ", image_count)
-  message("Smoothing: ", apply_smoothing)
-  message("Smoothing radius: ", smoothing_radius)
-  message("Shadow masking: ", mask_shadows)
-} else {
-  # target and fill collections
-  primary_collection <- processed$
-    filterDate(target_date, as.character(as.Date(target_date) + 1))
-
-  fill_collection <- processed$
-    filterDate(fill_date, as.character(as.Date(fill_date) + 1))
-
-  primary_count <- primary_collection$size()$getInfo()
-  fill_count <- fill_collection$size()$getInfo()
-
-  if (is.null(primary_count) || primary_count == 0) {
-    stop("No Sentinel-2 image found for target_date within the study area.")
-  }
-
-  if (is.null(fill_count) || fill_count == 0) {
-    stop("No Sentinel-2 image found for fill_date within the study area.")
-  }
-
-  # fill cloud gaps
-  primary_image <- make_daily_mosaic(target_date)
-  fill_image <- make_daily_mosaic(fill_date)
-
-  export_image <- primary_image$
-    unmask(fill_image)$
-    clip(study_area_ee)
-
-  if (apply_smoothing) {
-    export_image <- export_image$
-      focal_mean(
-        radius = smoothing_radius,
-        kernelType = "square",
-        units = "pixels"
-      )$
-      clip(study_area_ee)
-  }
-
-  # source image identifiers
-  primary_id <- tryCatch(
-    ee$String(primary_collection$sort("CLOUDY_PIXEL_PERCENTAGE")$first()$get("system:index"))$getInfo(),
-    error = function(e) NULL
-  )
-
-  fill_id <- tryCatch(
-    ee$String(fill_collection$sort("CLOUDY_PIXEL_PERCENTAGE")$first()$get("system:index"))$getInfo(),
-    error = function(e) NULL
-  )
-
-  tibble(
-    export_label = export_label,
-    start_date = as.character(start_date),
-    end_date = as.character(end_date),
-    composite_method = "single_day",
-    primary_date = target_date,
-    fill_date = fill_date,
-    primary_image_id = primary_id,
-    fill_image_id = fill_id,
-    primary_count = primary_count,
-    fill_count = fill_count,
-    smoothing = apply_smoothing,
-    smoothing_radius = smoothing_radius,
-    shadow_masking = mask_shadows,
-    cloud_threshold = cloud_threshold,
-    export_scale = export_scale
-  ) %>%
-    write_csv(metadata_path)
-
-  message("Primary date: ", target_date)
-  message("Fill date: ", fill_date)
-  message("Primary images: ", primary_count)
-  message("Fill images: ", fill_count)
-  message("Smoothing: ", apply_smoothing)
-  message("Smoothing radius: ", smoothing_radius)
-  message("Shadow masking: ", mask_shadows)
+if (is.null(image_count) || image_count == 0) {
+  stop("No Sentinel-2 images found in the requested month within the study area.")
 }
+
+export_image <- processed$
+  median()$
+  clip(study_area_ee)
+
+if (apply_smoothing) {
+  export_image <- export_image$
+    focal_mean(
+      radius = smoothing_radius,
+      kernelType = "square",
+      units = "pixels"
+    )$
+    clip(study_area_ee)
+}
+
+tibble(
+  export_label = export_label,
+  start_date = as.character(start_date),
+  end_date = as.character(end_date),
+  composite_method = "monthly_median",
+  n_images = image_count,
+  smoothing = apply_smoothing,
+  smoothing_radius = smoothing_radius,
+  shadow_masking = mask_shadows,
+  cloud_threshold = cloud_threshold,
+  export_scale = export_scale
+) %>%
+  write_csv(metadata_path)
+
+message("Composite label: ", export_label)
+message("Composite method: monthly median")
+message("Images used: ", image_count)
+message("Smoothing: ", apply_smoothing)
+message("Smoothing radius: ", smoothing_radius)
+message("Shadow masking: ", mask_shadows)
 
 # export summary
 message("Drive folder: ", drive_folder)
