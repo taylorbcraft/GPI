@@ -50,7 +50,7 @@ The Sentinel-2 predictors are S2REP, NDVI, NDWI, SAVI, EVI, MSI, NDMI, and MNDWI
 | `06_compare_s1_s2_classes.R` | Sentinel-1 comparison results and figure |
 | `07_analyze_biotic_relationships.R` | Godwit and insect figures |
 
-The optional `00_acquire_s1_imagery_rgee.R` and `00_acquire_s2_imagery_rgee.R` scripts acquire remote-sensing inputs through Google Earth Engine. They require a working `rgee` and Google Drive setup. The matching `00_acquire_s1_imagery_gee.js` and `00_acquire_s2_imagery_gee.js` scripts run in the Earth Engine Code Editor and create equivalent Google Drive export tasks.
+The optional acquisition scripts in `scripts/acquire_imagery/` obtain remote-sensing inputs through Google Earth Engine. The `_rgee.R` scripts require a working `rgee` and Google Drive setup. The matching `_gee.js` scripts run in the Earth Engine Code Editor and create equivalent Google Drive export tasks.
 
 ## Main outputs
 
